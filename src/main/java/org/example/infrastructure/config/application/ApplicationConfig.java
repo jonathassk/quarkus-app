@@ -8,6 +8,7 @@ import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.controller.UserController;
 import org.example.application.dto.UserRequestDTO;
 import org.example.domain.entity.User;
+import org.example.utils.UserDataVerification;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
 import org.modelmapper.PropertyMap;
@@ -45,7 +46,13 @@ public class ApplicationConfig {
 
         return modelMapper;
     }
-    
+
+    @Produces
+    @ApplicationScoped
+    public UserDataVerification userDataVerification() {
+        return new UserDataVerification();
+    }
+
     @Produces
     @ApplicationScoped
     public CreateUserUseCase createUserUseCase() {
@@ -60,7 +67,9 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public UserController userController(UserControllerAdapter adapter) {
-        return new UserController(adapter);
+    public UserController userController(
+            UserDataVerification userDataVerification,
+            CreateUserUseCase createUserUseCase) {
+        return new UserController(userDataVerification, createUserUseCase);
     }
 } 

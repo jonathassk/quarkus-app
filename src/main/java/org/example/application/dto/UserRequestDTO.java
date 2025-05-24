@@ -12,5 +12,6 @@ public record UserRequestDTO(String username,
                              String dateOfBirth,
                              String language,
                              String phoneNumber,
+                             Gender gender,
                              String timezone,
                              String bio) {}

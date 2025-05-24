@@ -17,7 +17,15 @@ import java.time.ZonedDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "users")
+@Table(
+        name = "users",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_provider_and_id",
+                        columnNames = {"provider", "provider_id"}
+                )
+        }
+)
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,6 +48,12 @@ public class User {
 
     @Column(unique = true, length = 50)
     private String username;
+
+    @Column(name = "provider", length = 20)
+    private String provider; // Ex: "google", "facebook"
+
+    @Column(name = "provider_id", length = 255)
+    private String providerId;
 
     @Column(name = "profile_picture_url", length = 255)
     private String profilePictureUrl;
