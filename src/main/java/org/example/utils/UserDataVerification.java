@@ -17,37 +17,36 @@ public class UserDataVerification {
 
     private List<String> verifyNullOrEmpty(UserRequestDTO user) {
         List<String> errors = new LinkedList<>();
-        if (user.fullname() == null || user.fullname().isEmpty()) errors.add("Full name is required");
-        if (user.email() == null || user.email().isEmpty()) {
-            errors.add("Email is required");
-        } else {
-            if (user.email().length() < 5) errors.add("Email must be at least 5 characters long");
-        }
-        if (user.password() == null || user.password().isEmpty()) {
+        if (user.getFullname() == null || user.getFullname().isEmpty()) errors.add("Full name is required");
+
+        if (user.getEmail() == null || user.getEmail().isEmpty()) errors.add("Email is required");
+        else if (user.getEmail().length() < 5) errors.add("Email must be at least 5 characters long");
+
+        if (user.getPassword() == null || user.getPassword().isEmpty()) {
             errors.add("Password is required");
         } else {
-            if (user.password().length() < 8) errors.add("Password must be at least 8 characters long");
-            if (!user.password().matches(".*[A-Z].*")) errors.add("Password must contain at least one uppercase letter");
+            if (user.getPassword().length() < 8) errors.add("Password must be at least 8 characters long");
+            if (!user.getPassword().matches(".*[A-Z].*")) errors.add("Password must contain at least one uppercase letter");
         }
-        if (user.username() == null || user.username().isEmpty()) {
+        if (user.getUsername() == null || user.getUsername().isEmpty()) {
             errors.add("Username is required");
         } else {
-            if (user.username().length() < 4) errors.add("Username must be at least 4 characters long");
-            if (!user.username().matches("^[a-zA-Z0-9._-]{3,}$")) errors.add("Username is invalid");
+            if (user.getUsername().length() < 4) errors.add("Username must be at least 4 characters long");
+            if (!user.getUsername().matches("^[a-zA-Z0-9._-]{3,}$")) errors.add("Username is invalid");
         }
-        if (user.city() == null || user.city().isEmpty()) errors.add("City is required");
-        if (user.country() == null || user.country().isEmpty()) errors.add("Country is required");
+        if (user.getCity() == null || user.getCity().isEmpty()) errors.add("City is required");
+        if (user.getCountry() == null || user.getCountry().isEmpty()) errors.add("Country is required");
         return errors;
     }
 
     private List<String> verifyDateOfBirth(UserRequestDTO user) {
         List<String> errors = new LinkedList<>();
-        if (user.dateOfBirth() == null || user.dateOfBirth().isEmpty()) {
+        if (user.getDateOfBirth() == null || user.getDateOfBirth().isEmpty()) {
             errors.add("Date of birth is required");
         } else {
-            String[] dateParts = user.dateOfBirth().split("/");
+            String[] dateParts = user.getDateOfBirth().split("/");
             if (dateParts.length != 3) {
-                errors.add("Date of birth format is invalid");
+                errors.add("Date of birth format is invalid, the correct format is dd/mm/yyyy");
             } else {
                 try {
                     int day = Integer.parseInt(dateParts[0]);

@@ -1,6 +1,7 @@
 package org.example.controller;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -15,7 +16,6 @@ import java.util.logging.Logger;
 @Path("/api/v1/users")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
-@ApplicationScoped
 @RequiredArgsConstructor
 public class UserController {
 
@@ -25,9 +25,10 @@ public class UserController {
     private final CreateUserUseCase createUserUseCase;
 
     @POST
+    @Transactional
     @Path("/create-user")
     public Response createUserEmail(UserRequestDTO dto) {
-        logger.info("Received request to create user, email" + dto.email());
+        logger.info("Received request to create user, email" + dto.getEmail());
         if (!userDataVerification.verifyUserData(dto).isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(userDataVerification.verifyUserData(dto))

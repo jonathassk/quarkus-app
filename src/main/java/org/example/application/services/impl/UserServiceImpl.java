@@ -1,11 +1,12 @@
 package org.example.application.services.impl;
 
 import lombok.RequiredArgsConstructor;
-import org.example.application.services.UserValidationService;
+import org.example.application.services.UserService;
 import org.example.domain.repository.UserRepository;
+import org.mindrot.jbcrypt.BCrypt;
 
 @RequiredArgsConstructor
-public class UserValidationServiceImpl implements UserValidationService {
+public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
 
@@ -26,8 +27,7 @@ public class UserValidationServiceImpl implements UserValidationService {
     }
 
     @Override
-    public void encryptPassword(String password) {
-
+    public String encryptPassword(String password) {
+        return BCrypt.hashpw(password, BCrypt.gensalt());
     }
-
 }

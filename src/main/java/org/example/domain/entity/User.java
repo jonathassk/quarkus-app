@@ -9,6 +9,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import org.example.domain.enums.Gender;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 
@@ -71,13 +72,13 @@ public class User extends PanacheEntity {
     private Boolean emailVerified = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private ZonedDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private ZonedDateTime updatedAt;
+    private Instant updatedAt;
 
     @Column(name = "last_login_at")
-    private ZonedDateTime lastLoginAt;
+    private Instant lastLoginAt;
 
     @Column(name = "phoneNumber")
     private String phoneNumber;
@@ -97,16 +98,16 @@ public class User extends PanacheEntity {
     private String bio;
 
     @Column(name = "deleted_at")
-    private ZonedDateTime deletedAt;
+    private Instant deletedAt;
 
     @PrePersist
     protected void onCreate() {
-        createdAt = ZonedDateTime.now();
-        updatedAt = ZonedDateTime.now();
+        createdAt = Instant.now();
+        updatedAt = Instant.now();
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = ZonedDateTime.now();
+        updatedAt = Instant.now();
     }
 } 
