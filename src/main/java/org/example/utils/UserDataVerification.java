@@ -10,7 +10,8 @@ public class UserDataVerification {
     public List<String> verifyUserData(UserRequestDTO user) {
         List<String> listErrors;
         listErrors = verifyNullOrEmpty(user);
-        listErrors.addAll(verifyDateOfBirth(user));
+        List<String> dateOfBirthErrors = verifyDateOfBirth(user);
+        if (!dateOfBirthErrors.isEmpty()) listErrors.addAll(dateOfBirthErrors);
         return listErrors;
     }
 
@@ -21,7 +22,6 @@ public class UserDataVerification {
             errors.add("Email is required");
         } else {
             if (user.email().length() < 5) errors.add("Email must be at least 5 characters long");
-            if (!user.email().matches("^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$")) errors.add("Email is invalid");
         }
         if (user.password() == null || user.password().isEmpty()) {
             errors.add("Password is required");
@@ -61,7 +61,7 @@ public class UserDataVerification {
                 }
             }
         }
-        return null;
+        return errors;
     }
 
 }

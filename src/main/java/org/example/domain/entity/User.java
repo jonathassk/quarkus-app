@@ -1,5 +1,6 @@
 package org.example.domain.entity;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -26,11 +27,7 @@ import java.time.ZonedDateTime;
                 )
         }
 )
-public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
+public class User extends PanacheEntity {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 

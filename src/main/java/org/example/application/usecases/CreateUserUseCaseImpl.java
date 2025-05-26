@@ -1,12 +1,16 @@
 package org.example.application.usecases;
 
+import lombok.RequiredArgsConstructor;
 import org.example.application.dto.UserRequestDTO;
+import org.example.application.services.UserValidationService;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
+import org.example.domain.repository.UserRepository;
 
+@RequiredArgsConstructor
 public class CreateUserUseCaseImpl implements CreateUserUseCase {
-    public String getTestMessage() {
-        return "Mensagem de teste do Service";
-    }
+
+    private final UserValidationService userValidationService;
+    private final UserRepository userRepository;
 
     @Override
     public void createUserFacebookAccount(String name, String email) {
@@ -22,6 +26,9 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
 
     @Override
     public void createUserEmail(UserRequestDTO userRequest) {
+        userValidationService.validatePassword(userRequest.password());
+        userValidationService.validateEmail(userRequest.email());
+        if (userRepository.findByEmailOrUsername(userRequest.email(), userRequest.username()).isPresent())throw new IllegalArgumentException("Email or username already exists.");
 
     }
 }

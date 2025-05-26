@@ -2,12 +2,15 @@ package org.example.infrastructure.config.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
+import org.example.application.services.UserValidationService;
+import org.example.application.services.impl.UserValidationServiceImpl;
 import org.example.application.usecases.CreateUserUseCaseImpl;
 import org.example.adapters.rest.UserControllerAdapter;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.controller.UserController;
 import org.example.application.dto.UserRequestDTO;
 import org.example.domain.entity.User;
+import org.example.domain.repository.UserRepository;
 import org.example.utils.UserDataVerification;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
@@ -35,7 +38,6 @@ public class ApplicationConfig {
                 map().setPhoneNumber(source.phoneNumber());
                 map().setTimezone(source.timezone());
                 map().setBio(source.bio());
-                skip().setId(null);
                 skip().setCreatedAt(null);
                 skip().setUpdatedAt(null);
                 skip().setLastLoginAt(null);
@@ -55,8 +57,22 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public CreateUserUseCase createUserUseCase() {
-        return new CreateUserUseCaseImpl();
+    public UserValidationService userValidationService(UserRepository userRepository) {
+        return new UserValidationServiceImpl(userRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public UserRepository userRepository() {
+        return new UserRepository();
+    }
+
+    @Produces
+    @ApplicationScoped
+    public CreateUserUseCase createUserUseCase(
+            UserValidationService userValidationService,
+            UserRepository userRepository) {
+        return new CreateUserUseCaseImpl(userValidationService, userRepository);
     }
 
     @Produces
