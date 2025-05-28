@@ -2,18 +2,26 @@ package org.example.infrastructure.config.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.example.application.services.TokenService;
 import org.example.application.services.UserService;
 import org.example.application.services.impl.UserServiceImpl;
 import org.example.application.usecases.CreateUserUseCaseImpl;
-import org.example.adapters.rest.UserControllerAdapter;
+import org.example.application.usecases.LoginUserUseCaseImpl;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
+import org.example.application.usecases.interfaces.LoginUserUseCase;
 import org.example.controller.UserController;
 import org.example.domain.repository.UserRepository;
-import org.example.infrastructure.mapper.ModelMapperFactory;
 import org.example.utils.UserDataVerification;
 
 @ApplicationScoped
 public class ApplicationConfig {
+
+    @ConfigProperty(name = "mp.jwt.verify.issuer")
+    String issuer;
+
+    @ConfigProperty(name = "mp.jwt.sign.key.location")
+    String privateKeyLocation;
     
     @Produces
     @ApplicationScoped
@@ -23,8 +31,10 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public UserService userValidationService(UserRepository userRepository) {
-        return new UserServiceImpl(userRepository);
+    public UserService userValidationService(
+            UserRepository userRepository,
+            TokenService tokenService) {
+        return new UserServiceImpl(userRepository, tokenService);
     }
 
     @Produces
@@ -43,13 +53,18 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public UserControllerAdapter userControllerAdapter() {
-        return new UserControllerAdapter(ModelMapperFactory.createModelMapper());
+    public LoginUserUseCase loginUserUseCase(
+            UserService userService,
+            UserRepository userRepository) {
+        return new LoginUserUseCaseImpl(userService, userRepository);
     }
 
     @Produces
     @ApplicationScoped
-    public UserController userController(UserDataVerification userDataVerification, CreateUserUseCase createUserUseCase) {
-        return new UserController(userDataVerification, createUserUseCase);
+    public UserController userController(
+            UserDataVerification userDataVerification,
+            CreateUserUseCase createUserUseCase,
+            LoginUserUseCase loginUserUseCase) {
+        return new UserController(userDataVerification, createUserUseCase, loginUserUseCase);
     }
 } 

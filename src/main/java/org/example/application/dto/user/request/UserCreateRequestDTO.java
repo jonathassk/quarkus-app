@@ -1,4 +1,4 @@
-package org.example.application.dto;
+package org.example.application.dto.user.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -10,7 +10,7 @@ import org.example.domain.enums.Gender;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserRequestDTO {
+public class UserCreateRequestDTO {
     private String username;
     private String email;
     private String password;

@@ -1,5 +1,6 @@
 package org.example.domain.entity;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -14,13 +15,10 @@ import lombok.Builder;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "trip_users")
-@IdClass(TripUser.TripUserId.class)
-public class TripUser {
-    @Id
+public class TripUser extends PanacheEntity {
     @Column(name = "trip_id")
     private Long tripId;
 
-    @Id
     @Column(name = "user_id")
     private Long userId;
 

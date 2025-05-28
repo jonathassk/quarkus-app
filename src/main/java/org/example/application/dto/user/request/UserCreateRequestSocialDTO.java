@@ -1,6 +1,6 @@
-package org.example.application.dto;
+package org.example.application.dto.user.request;
 
-public record UserRequestSocialDto(
+public record UserCreateRequestSocialDTO(
         String email,
         String fullName,
         String provider,

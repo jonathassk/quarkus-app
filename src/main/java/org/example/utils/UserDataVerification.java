@@ -1,13 +1,13 @@
 package org.example.utils;
 
-import org.example.application.dto.UserRequestDTO;
+import org.example.application.dto.user.request.UserCreateRequestDTO;
 
 import java.util.LinkedList;
 import java.util.List;
 
 public class UserDataVerification {
 
-    public List<String> verifyUserData(UserRequestDTO user) {
+    public List<String> verifyUserData(UserCreateRequestDTO user) {
         List<String> listErrors;
         listErrors = verifyNullOrEmpty(user);
         List<String> dateOfBirthErrors = verifyDateOfBirth(user);
@@ -15,7 +15,7 @@ public class UserDataVerification {
         return listErrors;
     }
 
-    private List<String> verifyNullOrEmpty(UserRequestDTO user) {
+    private List<String> verifyNullOrEmpty(UserCreateRequestDTO user) {
         List<String> errors = new LinkedList<>();
         if (user.getFullname() == null || user.getFullname().isEmpty()) errors.add("Full name is required");
 
@@ -39,7 +39,7 @@ public class UserDataVerification {
         return errors;
     }
 
-    private List<String> verifyDateOfBirth(UserRequestDTO user) {
+    private List<String> verifyDateOfBirth(UserCreateRequestDTO user) {
         List<String> errors = new LinkedList<>();
         if (user.getDateOfBirth() == null || user.getDateOfBirth().isEmpty()) {
             errors.add("Date of birth is required");

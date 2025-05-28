@@ -1,7 +1,11 @@
 package org.example.application.services.impl;
 
+import io.quarkus.security.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
+import org.example.application.dto.user.response.UserResponseDTO;
+import org.example.application.services.TokenService;
 import org.example.application.services.UserService;
+import org.example.domain.entity.User;
 import org.example.domain.repository.UserRepository;
 import org.mindrot.jbcrypt.BCrypt;
 
@@ -9,6 +13,7 @@ import org.mindrot.jbcrypt.BCrypt;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final TokenService tokenService;
 
     @Override
     public void validatePassword(String password) {
@@ -29,5 +34,20 @@ public class UserServiceImpl implements UserService {
     @Override
     public String encryptPassword(String password) {
         return BCrypt.hashpw(password, BCrypt.gensalt());
+    }
+
+    @Override
+    public String validateUser(User user, String password) {
+        if (!BCrypt.checkpw(password, user.getPasswordHash())) throw new UnauthorizedException("Invalid password");
+        try {
+            return tokenService.generateToken(user, password);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public UserResponseDTO mapperResponseUser(User user, String token) {
+        return null;
     }
 }

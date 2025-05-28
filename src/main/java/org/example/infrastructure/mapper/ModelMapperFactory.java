@@ -1,8 +1,7 @@
 package org.example.infrastructure.mapper;
 
-import org.example.application.dto.UserRequestDTO;
-import org.example.application.services.UserService;
-import org.example.application.services.impl.UserServiceImpl;
+import org.example.application.dto.user.request.UserCreateRequestDTO;
+import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.domain.entity.User;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.PropertyMap;
@@ -19,7 +18,7 @@ public class ModelMapperFactory {
                 .setSkipNullEnabled(true);
 
         // Custom mapping for User
-        modelMapper.addMappings(new PropertyMap<UserRequestDTO, User>() {
+        modelMapper.addMappings(new PropertyMap<UserCreateRequestDTO, User>() {
             @Override
             protected void configure() {
                 map().setFullName(source.getFullname());
@@ -37,5 +36,10 @@ public class ModelMapperFactory {
         });
 
         return modelMapper;
+    }
+
+    public static UserResponseDTO mapperResponseUser(User user, String token) {
+        ModelMapper modelMapper = new ModelMapper();
+        return null;
     }
 } 

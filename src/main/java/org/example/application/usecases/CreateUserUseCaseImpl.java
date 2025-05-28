@@ -1,9 +1,9 @@
 package org.example.application.usecases;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.example.application.dto.UserRequestDTO;
+import org.example.application.dto.user.request.UserCreateRequestDTO;
+import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.application.services.UserService;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.domain.entity.User;
@@ -32,7 +32,7 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
 
     @Override
     @Transactional
-    public void createUserEmail(UserRequestDTO userRequest) {
+    public UserResponseDTO createUserEmail(UserCreateRequestDTO userRequest) {
         userService.validatePassword(userRequest.getPassword());
         userService.validateEmail(userRequest.getEmail());
         if (userRepository.findByEmailOrUsername(userRequest.getEmail(), userRequest.getUsername()).isPresent())throw new IllegalArgumentException("Email or username already exists.");
@@ -41,5 +41,13 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
         User user = mapper.map(userRequest, User.class);
         user.setPasswordHash(encryptedPassword);
         userRepository.persist(user);
+        UserResponseDTO response = mapper.map(user, UserResponseDTO.class);
+        response.setToken(userService.validateUser(user, userRequest.getPassword()));
+        response.setExpiresIn(18000L);
+        return response;
+    }
+
+    private UserResponseDTO mapperResponse(User user) {
+        return null;
     }
 }
