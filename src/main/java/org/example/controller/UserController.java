@@ -11,7 +11,6 @@ import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
 import org.example.utils.UserDataVerification;
-import org.jboss.resteasy.annotations.Body;
 
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
@@ -58,7 +57,6 @@ public class UserController {
                 .entity("Email and password are required")
                 .build();
         }
-
         try {
             UserResponseDTO response = loginUserUseCase.LoginUserEmailUsername(request.getEmail(), request.getPassword());
             return Response.status(Response.Status.OK).entity(response).build();

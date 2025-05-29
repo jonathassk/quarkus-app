@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Getter
 @Setter
@@ -35,6 +36,12 @@ public class TripSegment {
 
     @Column(columnDefinition = "TEXT")
     private String notes;
+
+    @OneToMany(mappedBy = "tripSegment", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Meal> meals;
+
+    @OneToMany(mappedBy = "tripSegment", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Activity> activities;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "trip_id", insertable = false, updatable = false)

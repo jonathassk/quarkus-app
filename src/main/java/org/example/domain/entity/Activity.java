@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Getter
 @Setter
@@ -38,60 +39,10 @@ public class Activity {
     @Column(columnDefinition = "TEXT")
     private String site;
 
-    // Getters and Setters
-    public Long getId() {
-        return id;
-    }
+    @Column(nullable = false)
+    private LocalDate date;  // Novo campo para a data específica
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public Long getDailyItineraryId() {
-        return dailyItineraryId;
-    }
-
-    public void setDailyItineraryId(Long dailyItineraryId) {
-        this.dailyItineraryId = dailyItineraryId;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getActivityType() {
-        return activityType;
-    }
-
-    public void setActivityType(String activityType) {
-        this.activityType = activityType;
-    }
-
-    public String getAddress() {
-        return address;
-    }
-
-    public void setAddress(String address) {
-        this.address = address;
-    }
-
-    public BigDecimal getCost() {
-        return cost;
-    }
-
-    public void setCost(BigDecimal cost) {
-        this.cost = cost;
-    }
-
-    public String getSite() {
-        return site;
-    }
-
-    public void setSite(String site) {
-        this.site = site;
-    }
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trip_segment_id")
+    private TripSegment tripSegment;
 } 

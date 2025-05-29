@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Getter
 @Setter
@@ -40,6 +41,13 @@ public class Meal {
 
     @Column(precision = 10, scale = 2)
     private BigDecimal cost;
+
+    @Column(nullable = false)
+    private LocalDate date;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trip_segment_id")
+    private TripSegment tripSegment;
 
     @Column(name = "booking_reference", length = 100)
     private String bookingReference;
