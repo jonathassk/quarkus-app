@@ -2,65 +2,106 @@ package org.example.infrastructure.config.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.example.application.services.TokenService;
+import org.example.application.services.UserService;
+import org.example.application.services.impl.UserServiceImpl;
+import org.example.application.usecases.CreateTripUseCaseimpl;
 import org.example.application.usecases.CreateUserUseCaseImpl;
-import org.example.adapters.rest.UserControllerAdapter;
+import org.example.application.usecases.LoginUserUseCaseImpl;
+import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
+import org.example.application.usecases.interfaces.LoginUserUseCase;
+import org.example.controller.TripController;
 import org.example.controller.UserController;
-import org.example.application.dto.UserRequestDTO;
-import org.example.domain.entity.User;
-import org.modelmapper.ModelMapper;
-import org.modelmapper.convention.MatchingStrategies;
-import org.modelmapper.PropertyMap;
+import org.example.domain.repository.*;
+import org.example.utils.UserDataVerification;
 
 @ApplicationScoped
 public class ApplicationConfig {
+
+    @ConfigProperty(name = "mp.jwt.verify.issuer")
+    String issuer;
+
+    @ConfigProperty(name = "mp.jwt.sign.key.location")
+    String privateKeyLocation;
     
     @Produces
     @ApplicationScoped
-    public ModelMapper modelMapper() {
-        ModelMapper modelMapper = new ModelMapper();
-        modelMapper.getConfiguration()
-                .setMatchingStrategy(MatchingStrategies.STRICT)
-                .setSkipNullEnabled(true);
-
-        // Custom mapping for User
-        modelMapper.addMappings(new PropertyMap<UserRequestDTO, User>() {
-            @Override
-            protected void configure() {
-                map().setPasswordHash(source.password());
-                map().setFullName(source.fullname());
-                map().setProfilePictureUrl(source.pictureUrl());
-                map().setPreferredLanguage(source.language());
-                map().setPhoneNumber(source.phoneNumber());
-                map().setTimezone(source.timezone());
-                map().setBio(source.bio());
-                skip().setId(null);
-                skip().setCreatedAt(null);
-                skip().setUpdatedAt(null);
-                skip().setLastLoginAt(null);
-                skip().setDeletedAt(null);
-                skip().setPhoneVerified(null);
-            }
-        });
-
-        return modelMapper;
-    }
-    
-    @Produces
-    @ApplicationScoped
-    public CreateUserUseCase createUserUseCase() {
-        return new CreateUserUseCaseImpl();
+    public UserDataVerification userDataVerification() {
+        return new UserDataVerification();
     }
 
     @Produces
     @ApplicationScoped
-    public UserControllerAdapter userControllerAdapter(ModelMapper modelMapper) {
-        return new UserControllerAdapter(modelMapper);
+    public UserService userValidationService(
+            UserRepository userRepository,
+            TokenService tokenService) {
+        return new UserServiceImpl(userRepository, tokenService);
     }
 
     @Produces
     @ApplicationScoped
-    public UserController userController(UserControllerAdapter adapter) {
-        return new UserController(adapter);
+    public UserRepository userRepository() {
+        return new UserRepository();
     }
+
+    @Produces
+    @ApplicationScoped
+    public TripRepository tripRepository() { return new TripRepository(); }
+
+    @Produces
+    @ApplicationScoped
+    public TripSegmentRepository tripSegmentRepository() { return new TripSegmentRepository(); }
+
+    @Produces
+    @ApplicationScoped
+    public ActivityRepository activityRepository() { return new ActivityRepository(); }
+
+    @Produces
+    @ApplicationScoped
+    public MealRepository mealRepository() { return new MealRepository(); }
+
+    @Produces
+    @ApplicationScoped
+    public TripUserRepository tripUserRepository() { return new TripUserRepository(); }
+
+    @Produces
+    @ApplicationScoped
+    public CreateUserUseCase createUserUseCase(
+            UserService userService,
+            UserRepository userRepository) {
+        return new CreateUserUseCaseImpl(userService, userRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public CreateTripUseCase createTripUseCase(TripRepository tripRepository, UserRepository userRepository) {
+        return new CreateTripUseCaseimpl(tripRepository, userRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public LoginUserUseCase loginUserUseCase(
+            UserService userService,
+            UserRepository userRepository) {
+        return new LoginUserUseCaseImpl(userService, userRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public TripController tripController(CreateTripUseCase createTripUseCase, UserRepository userRepository, TripRepository tripRepository) {
+        return new TripController(createTripUseCase, userRepository, tripRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public UserController userController(
+            UserDataVerification userDataVerification,
+            CreateUserUseCase createUserUseCase,
+            LoginUserUseCase loginUserUseCase) {
+        return new UserController(userDataVerification, createUserUseCase, loginUserUseCase);
+    }
+
+
 } 

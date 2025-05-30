@@ -1,5 +1,6 @@
 package org.example.domain.entity;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -14,34 +15,15 @@ import lombok.Builder;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "trip_users")
-@IdClass(TripUser.TripUserId.class)
-public class TripUser {
-    @Id
-    @Column(name = "trip_id")
-    private Long tripId;
-
-    @Id
-    @Column(name = "user_id")
-    private Long userId;
-
-    @Column(name = "permission_level", nullable = false, length = 20)
-    @Builder.Default
-    private String permissionLevel = "viewer";
-
+public class TripUser extends PanacheEntity {
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "trip_id", insertable = false, updatable = false)
-    private Trip trip;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Getter
-    @Setter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class TripUserId implements java.io.Serializable {
-        private Long tripId;
-        private Long userId;
-    }
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trip_id", nullable = false)
+    private Trip trip;
+
+    @Column(name = "permission_level", length = 20)
+    private String permissionLevel;
 } 

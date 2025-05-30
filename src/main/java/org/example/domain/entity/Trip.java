@@ -1,16 +1,12 @@
 package org.example.domain.entity;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.AccessLevel;
+import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZonedDateTime;
 import java.util.List;
 
 @Getter
@@ -20,12 +16,10 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "trips")
-public class Trip {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class Trip extends PanacheEntity {
 
-    @Column(nullable = false, length = 100)
+
+    @Column(nullable = false, length = 255)
     private String name;
 
     @Column(columnDefinition = "TEXT")
@@ -40,23 +34,15 @@ public class Trip {
     @Column(name = "end_date")
     private LocalDate endDate;
 
-    @Column(name = "cover_image_url", length = 255)
+    @Column(name = "cover_image_url", length = 512)
     private String coverImageUrl;
 
-    @Column(name = "created_by", nullable = false)
-    private Long createdBy;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    @Setter(AccessLevel.NONE)
-    private ZonedDateTime createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    @Setter(AccessLevel.NONE)
-    private ZonedDateTime updatedAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by", nullable = false)
+    private User createdBy;
 
     @Column(length = 20)
-    @Builder.Default
-    private String visibility = "private";
+    private String visibility; // Pode ser transformado em enum depois
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TripSegment> segments;
@@ -64,18 +50,20 @@ public class Trip {
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TripUser> users;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "created_by", insertable = false, updatable = false)
-    private User creator;
+    @Column(name = "created_at", updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at")
+    private Instant updatedAt;
 
     @PrePersist
-    protected void onCreate() {
-        createdAt = ZonedDateTime.now();
-        updatedAt = ZonedDateTime.now();
+    void prePersist() {
+        createdAt = Instant.now();
+        updatedAt = Instant.now();
     }
 
     @PreUpdate
-    protected void onUpdate() {
-        updatedAt = ZonedDateTime.now();
+    void preUpdate() {
+        updatedAt = Instant.now();
     }
 } 
