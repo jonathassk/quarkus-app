@@ -1,11 +1,8 @@
 package org.example.domain.entity;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.*;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -17,41 +14,26 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "trip_segments")
-public class TripSegment {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(name = "trip_id", nullable = false)
-    private Long tripId;
-
-    @Column(name = "city_id", nullable = false, length = 50)
+public class TripSegment extends PanacheEntity {
+    @Column(name = "city_id", length = 50)
     private String cityId;
 
-    @Column(name = "arrival_date", nullable = false)
+    @Column(name = "arrival_date")
     private LocalDate arrivalDate;
 
-    @Column(name = "departure_date", nullable = false)
+    @Column(name = "departure_date")
     private LocalDate departureDate;
 
     @Column(columnDefinition = "TEXT")
     private String notes;
 
-    @OneToMany(mappedBy = "tripSegment", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Meal> meals;
-
-    @OneToMany(mappedBy = "tripSegment", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Activity> activities;
-
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "trip_id", insertable = false, updatable = false)
+    @JoinColumn(name = "trip_id", nullable = false)
     private Trip trip;
 
-    @PrePersist
-    @PreUpdate
-    protected void validateDates() {
-        if (departureDate.isBefore(arrivalDate)) {
-            throw new IllegalArgumentException("Departure date must be after or equal to arrival date");
-        }
-    }
+    @OneToMany(mappedBy = "segment", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Meal> meals;
+
+    @OneToMany(mappedBy = "segment", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Activity> activities;
 } 

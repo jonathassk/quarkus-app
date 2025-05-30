@@ -18,6 +18,7 @@ public class TripRequestDTO {
     private LocalDate startDate;
     private LocalDate endDate;
     private String coverImageUrl;
+    private Long createdBy;
     private String visibility;
     private List<TripSegmentRequestDTO> segments;
     private List<TripUserRequestDTO> users;

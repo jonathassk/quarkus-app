@@ -8,7 +8,7 @@ public class TripDataValidator {
         if (tripRequest.getName() == null || tripRequest.getName().isEmpty()) throw new IllegalArgumentException("Trip name cannot be null or empty.");
         if (tripRequest.getEndDate() == null) throw new IllegalArgumentException("Trip end date cannot be null.");
         if (tripRequest.getStartDate() == null) throw new IllegalArgumentException("Trip start date cannot be null.");
-        if (tripRequest.getStartDate().isBefore(tripRequest.getEndDate())) throw new IllegalArgumentException("Trip start date cannot be before end date.");
+        if (tripRequest.getStartDate().isAfter(tripRequest.getEndDate())) throw new IllegalArgumentException("Trip start date cannot be before end date.");
         if (tripRequest.getSegments().isEmpty() || tripRequest.getSegments().stream().anyMatch(segment -> segment.getActivities().isEmpty())) {
             throw new IllegalArgumentException("Trip must have at least one segment with activities.");
         }

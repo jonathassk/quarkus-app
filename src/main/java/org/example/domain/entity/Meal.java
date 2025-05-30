@@ -1,5 +1,6 @@
 package org.example.domain.entity;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -16,39 +17,29 @@ import java.time.LocalDate;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "meals")
-public class Meal {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class Meal extends PanacheEntity {
 
-    @Column(name = "daily_itinerary_id")
-    private Long dailyItineraryId;
-
-    @Column(name = "meal_type", nullable = false, length = 20)
+    @Column(name = "meal_type", length = 50)
     private String mealType;
 
-    @Column(nullable = false, length = 100)
+    @Column(length = 255)
     private String name;
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(length = 100)
+    @Column(length = 255)
     private String location;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(length = 255)
     private String address;
 
     @Column(precision = 10, scale = 2)
     private BigDecimal cost;
 
-    @Column(nullable = false)
     private LocalDate date;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "trip_segment_id")
-    private TripSegment tripSegment;
-
-    @Column(name = "booking_reference", length = 100)
-    private String bookingReference;
+    @JoinColumn(name = "segment_id")
+    private TripSegment segment;
 } 

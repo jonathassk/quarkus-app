@@ -16,30 +16,14 @@ import lombok.Builder;
 @AllArgsConstructor
 @Table(name = "trip_users")
 public class TripUser extends PanacheEntity {
-    @Column(name = "trip_id")
-    private Long tripId;
-
-    @Column(name = "user_id")
-    private Long userId;
-
-    @Column(name = "permission_level", nullable = false, length = 20)
-    @Builder.Default
-    private String permissionLevel = "viewer";
-
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "trip_id", insertable = false, updatable = false)
-    private Trip trip;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Getter
-    @Setter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class TripUserId implements java.io.Serializable {
-        private Long tripId;
-        private Long userId;
-    }
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trip_id", nullable = false)
+    private Trip trip;
+
+    @Column(name = "permission_level", length = 20)
+    private String permissionLevel;
 } 
