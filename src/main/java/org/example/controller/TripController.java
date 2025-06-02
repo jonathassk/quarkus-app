@@ -7,20 +7,13 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import org.example.application.dto.trip.request.TripRequestDTO;
-import org.example.application.dto.trip.request.TripSegmentRequestDTO;
+import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.domain.entity.Trip;
-import org.example.domain.entity.TripSegment;
-import org.example.domain.entity.TripUser;
-import org.example.domain.entity.User;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
-import org.example.infrastructure.mapper.ModelMapperFactory;
+import org.example.infrastructure.mapper.TripMapper;
 import org.example.utils.TripDataValidator;
-import org.modelmapper.ModelMapper;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
@@ -36,44 +29,20 @@ public class TripController {
     @Transactional
     @Path("/create-trip")
     public Response createTrip(@Valid TripRequestDTO tripRequest) {
-        ModelMapper mapper = ModelMapperFactory.createModelMapper();
-
         TripDataValidator.validateTripRequest(tripRequest);
-        Trip trip = mapper.map(tripRequest, Trip.class);
-
-        User creator = userRepository.findById(tripRequest.getCreatedBy());
-        if (creator == null) throw new NotFoundException("User not found");
-        trip.setCreatedBy(creator);
-
-        TripUser tripUser = new TripUser();
-        tripUser.setUser(creator);
-        tripUser.setTrip(trip);
-        tripUser.setPermissionLevel("OWNER");
-
-        if (tripRequest.getSegments() != null && !tripRequest.getSegments().isEmpty()) {
-            List<TripSegment> segments = new ArrayList<>();
-
-            for (TripSegmentRequestDTO segmentDTO : tripRequest.getSegments()) {
-                TripSegment segment = mapper.map(segmentDTO, TripSegment.class);
-
-                // Configura a relação BIDIRECIONAL
-                segment.setTrip(trip); // LADO OBRIGATÓRIO
-                segments.add(segment);
-            }
-
-            // Atribui a lista completa de segmentos
-            trip.setSegments(segments);
-        }
-
-        List<TripUser> tripUsers = new ArrayList<>();
-        tripUsers.add(tripUser);
-        trip.setUsers(tripUsers);
-
-        // 5. Persiste o Trip (os segmentos serão persistidos em cascata)
-        tripRepository.persist(trip);
+        Trip result = createTripUseCase.createTrip(tripRequest);
 
         return Response.status(Response.Status.CREATED)
-                .entity("Trip created successfully")
+                .entity(result.id)
                 .build();
+    }
+
+    @GET
+    @Path("/{tripId}")
+    public Response getTripById(@PathParam("tripId") Long tripId) {
+        Trip trip = tripRepository.findById(tripId);
+        if (trip == null) return Response.status(Response.Status.NOT_FOUND).build();
+        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(trip);
+        return Response.ok(tripResponse).build();
     }
 }

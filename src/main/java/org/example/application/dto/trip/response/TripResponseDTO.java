@@ -1,4 +1,4 @@
-package org.example.application.dto.trip.request;
+package org.example.application.dto.trip.response;
 
 import lombok.*;
 import org.example.application.dto.trip.TripSegmentDTO;
@@ -13,14 +13,13 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
-public class TripRequestDTO {
+public class TripResponseDTO {
     private String name;
     private String description;
     private BigDecimal budgetTotal;
     private LocalDate startDate;
     private LocalDate endDate;
     private String coverImageUrl;
-    private Long createdBy;
     private String visibility;
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;

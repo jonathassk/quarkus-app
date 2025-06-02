@@ -1,4 +1,4 @@
-package org.example.application.dto.trip.request;
+package org.example.application.dto.trip;
 
 import lombok.*;
 
@@ -10,11 +10,11 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TripSegmentRequestDTO {
+public class TripSegmentDTO {
     private String cityId;
     private LocalDate arrivalDate;
     private LocalDate departureDate;
     private String notes;
-    private List<MealRequestDTO> meals;
-    private List<ActivityRequestDTO> activities;
+    private List<MealDTO> meals;
+    private List<ActivityDTO> activities;
 }

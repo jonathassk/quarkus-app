@@ -1,4 +1,4 @@
-package org.example.application.dto.trip.request;
+package org.example.application.dto.trip;
 
 import lombok.*;
 import org.example.domain.enums.UserPermissionLevel;
@@ -8,7 +8,7 @@ import org.example.domain.enums.UserPermissionLevel;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TripUserRequestDTO {
+public class TripUserDTO {
     private Long userId;
     private UserPermissionLevel permissionLevel;
 }

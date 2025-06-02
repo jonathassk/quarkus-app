@@ -17,8 +17,6 @@ import java.util.List;
 @AllArgsConstructor
 @Table(name = "trips")
 public class Trip extends PanacheEntity {
-
-
     @Column(nullable = false, length = 255)
     private String name;
 

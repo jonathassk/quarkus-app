@@ -1,7 +1,9 @@
 package org.example.infrastructure.mapper;
 
+import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.dto.user.request.UserCreateRequestDTO;
 import org.example.application.dto.user.response.UserResponseDTO;
+import org.example.domain.entity.Trip;
 import org.example.domain.entity.User;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.PropertyMap;
@@ -41,5 +43,14 @@ public class ModelMapperFactory {
     public static UserResponseDTO mapperResponseUser(User user, String token) {
         ModelMapper modelMapper = new ModelMapper();
         return null;
+    }
+
+    public static TripResponseDTO mapperResponseTrip(Trip trip) {
+        ModelMapper modelMapper = new ModelMapper();
+        modelMapper.getConfiguration()
+                .setMatchingStrategy(MatchingStrategies.STRICT)
+                .setSkipNullEnabled(true);
+
+        return modelMapper.map(trip, TripResponseDTO.class);
     }
 } 

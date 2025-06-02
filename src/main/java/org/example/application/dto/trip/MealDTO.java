@@ -1,4 +1,4 @@
-package org.example.application.dto.trip.request;
+package org.example.application.dto.trip;
 
 import lombok.*;
 
@@ -11,7 +11,7 @@ import java.time.LocalDate;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MealRequestDTO {
+public class MealDTO {
     private String name;
     private String mealType; // breakfast, lunch, dinner, snack
     private String description;

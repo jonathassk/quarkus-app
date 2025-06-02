@@ -4,7 +4,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.services.TokenService;
+import org.example.application.services.TripService;
 import org.example.application.services.UserService;
+import org.example.application.services.impl.TripServiceImpl;
 import org.example.application.services.impl.UserServiceImpl;
 import org.example.application.usecases.CreateTripUseCaseimpl;
 import org.example.application.usecases.CreateUserUseCaseImpl;
@@ -30,14 +32,6 @@ public class ApplicationConfig {
     @ApplicationScoped
     public UserDataVerification userDataVerification() {
         return new UserDataVerification();
-    }
-
-    @Produces
-    @ApplicationScoped
-    public UserService userValidationService(
-            UserRepository userRepository,
-            TokenService tokenService) {
-        return new UserServiceImpl(userRepository, tokenService);
     }
 
     @Produces
@@ -68,6 +62,12 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
+    public TripService tripService() {
+        return new TripServiceImpl();
+    }
+
+    @Produces
+    @ApplicationScoped
     public CreateUserUseCase createUserUseCase(
             UserService userService,
             UserRepository userRepository) {
@@ -76,8 +76,19 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public CreateTripUseCase createTripUseCase(TripRepository tripRepository, UserRepository userRepository) {
-        return new CreateTripUseCaseimpl(tripRepository, userRepository);
+    public UserService userService(UserRepository userRepository, TokenService tokenService) {
+        return new UserServiceImpl(userRepository, tokenService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public CreateTripUseCase createTripUseCase(
+            TripRepository tripRepository,
+            UserRepository userRepository,
+            TripService tripService,
+            ActivityRepository activityRepository,
+            MealRepository mealRepository) {
+        return new CreateTripUseCaseimpl(tripRepository, userRepository, tripService, activityRepository, mealRepository);
     }
 
     @Produces
