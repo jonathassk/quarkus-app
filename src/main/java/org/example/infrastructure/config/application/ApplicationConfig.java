@@ -11,9 +11,11 @@ import org.example.application.services.impl.UserServiceImpl;
 import org.example.application.usecases.CreateTripUseCaseimpl;
 import org.example.application.usecases.CreateUserUseCaseImpl;
 import org.example.application.usecases.LoginUserUseCaseImpl;
+import org.example.application.usecases.UpdateTripUseCaseImpl;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
+import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.controller.TripController;
 import org.example.controller.UserController;
 import org.example.domain.repository.*;
@@ -76,6 +78,12 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
+    public UpdateTripUseCase updateTripUseCase(TripRepository tripRepository) {
+        return new UpdateTripUseCaseImpl(tripRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
     public UserService userService(UserRepository userRepository, TokenService tokenService) {
         return new UserServiceImpl(userRepository, tokenService);
     }
@@ -101,8 +109,12 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public TripController tripController(CreateTripUseCase createTripUseCase, UserRepository userRepository, TripRepository tripRepository) {
-        return new TripController(createTripUseCase, userRepository, tripRepository);
+    public TripController tripController(
+            CreateTripUseCase createTripUseCase,
+            UpdateTripUseCase updateTripUseCase,
+            UserRepository userRepository,
+            TripRepository tripRepository) {
+        return new TripController(createTripUseCase, updateTripUseCase, userRepository, tripRepository);
     }
 
     @Produces

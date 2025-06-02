@@ -6,9 +6,11 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
+import org.example.application.dto.trip.request.NameDescriptionTravelRequestDto;
 import org.example.application.dto.trip.request.TripRequestDTO;
 import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
+import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.domain.entity.Trip;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
@@ -22,6 +24,7 @@ import org.example.utils.TripDataValidator;
 public class TripController {
 
     private final CreateTripUseCase createTripUseCase;
+    private final UpdateTripUseCase updateTripUseCase;
     private final UserRepository userRepository;
     private final TripRepository tripRepository;
 
@@ -45,4 +48,31 @@ public class TripController {
         TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(trip);
         return Response.ok(tripResponse).build();
     }
+
+    @PUT
+    @Path("/{tripId}")
+    @Transactional
+    public Response updateTrip(@PathParam("tripId") Long tripId, @Valid TripRequestDTO tripRequest) {
+        TripDataValidator.validateTripRequest(tripRequest);
+        Trip existingTrip = tripRepository.findById(tripId);
+        if (existingTrip == null) return Response.status(Response.Status.NOT_FOUND).build();
+
+        Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
+        return Response.ok(TripMapper.mapToTripResponseDTO(updatedTrip)).build();
+    }
+
+    @PATCH
+    @Path("/{tripId}/update-name-description")
+    @Transactional
+    public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId, @Valid NameDescriptionTravelRequestDto request) {
+        if (request.getDescription() == null || request.getName() == null || request.getDescription().isBlank() || request.getName().isBlank())
+            return Response.status(Response.Status.BAD_REQUEST).entity("missing field value").build();
+
+        Trip existingTrip = tripRepository.findById(tripId);
+        if (existingTrip == null) return Response.status(Response.Status.NOT_FOUND).build();
+
+        Trip updatedTrip = updateTripUseCase.updateNameAndDescription(tripId, request);
+        return Response.ok(TripMapper.mapToTripResponseDTO(updatedTrip)).build();
+    }
+
 }
