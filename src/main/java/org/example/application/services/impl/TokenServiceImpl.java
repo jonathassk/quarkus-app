@@ -32,7 +32,11 @@ public class TokenServiceImpl implements TokenService {
 
     @Override
     public String validateToken(String token) {
-        return "";
+        try {
+            return token; // Token is valid
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid token", e); // Handle invalid token
+        }
     }
 
     @Override

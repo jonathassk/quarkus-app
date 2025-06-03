@@ -70,6 +70,12 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
+    public UserService userService(UserRepository userRepository, TokenService tokenService) {
+        return new UserServiceImpl(userRepository, tokenService);
+    }
+
+    @Produces
+    @ApplicationScoped
     public CreateUserUseCase createUserUseCase(
             UserService userService,
             UserRepository userRepository) {
@@ -78,14 +84,10 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public UpdateTripUseCase updateTripUseCase(TripRepository tripRepository) {
-        return new UpdateTripUseCaseImpl(tripRepository);
-    }
-
-    @Produces
-    @ApplicationScoped
-    public UserService userService(UserRepository userRepository, TokenService tokenService) {
-        return new UserServiceImpl(userRepository, tokenService);
+    public UpdateTripUseCase updateTripUseCase(
+            TripRepository tripRepository,
+            TripService tripService) {
+        return new UpdateTripUseCaseImpl(tripRepository, tripService);
     }
 
     @Produces
@@ -125,6 +127,4 @@ public class ApplicationConfig {
             LoginUserUseCase loginUserUseCase) {
         return new UserController(userDataVerification, createUserUseCase, loginUserUseCase);
     }
-
-
 } 

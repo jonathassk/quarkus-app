@@ -2,16 +2,11 @@ package org.example.domain.entity;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
+import lombok.*;
 import org.example.domain.enums.Gender;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZonedDateTime;
 
 @Getter
 @Setter
@@ -99,6 +94,8 @@ public class User extends PanacheEntity {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    @Column(name = "UserPermissionLevel")
 
     @PrePersist
     protected void onCreate() {

@@ -33,11 +33,20 @@ public class TripController {
     @Path("/create-trip")
     public Response createTrip(@Valid TripRequestDTO tripRequest) {
         TripDataValidator.validateTripRequest(tripRequest);
-        Trip result = createTripUseCase.createTrip(tripRequest);
+        try {
+            userRepository.findById(tripRequest.getCreatedBy());
+            Trip result = createTripUseCase.createTrip(tripRequest);
 
-        return Response.status(Response.Status.CREATED)
-                .entity(result.id)
-                .build();
+            return Response.status(Response.Status.CREATED)
+                    .entity(result.id)
+                    .build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(e.getMessage())
+                    .build();
+        }
+
+
     }
 
     @GET
@@ -50,29 +59,24 @@ public class TripController {
     }
 
     @PUT
-    @Path("/{tripId}")
     @Transactional
+    @Path("/{tripId}/update-trip")
     public Response updateTrip(@PathParam("tripId") Long tripId, @Valid TripRequestDTO tripRequest) {
         TripDataValidator.validateTripRequest(tripRequest);
-        Trip existingTrip = tripRepository.findById(tripId);
-        if (existingTrip == null) return Response.status(Response.Status.NOT_FOUND).build();
-
         Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
-        return Response.ok(TripMapper.mapToTripResponseDTO(updatedTrip)).build();
+        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
+        return Response.ok(tripResponse).build();
     }
 
     @PATCH
-    @Path("/{tripId}/update-name-description")
     @Transactional
-    public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId, @Valid NameDescriptionTravelRequestDto request) {
-        if (request.getDescription() == null || request.getName() == null || request.getDescription().isBlank() || request.getName().isBlank())
-            return Response.status(Response.Status.BAD_REQUEST).entity("missing field value").build();
-
-        Trip existingTrip = tripRepository.findById(tripId);
-        if (existingTrip == null) return Response.status(Response.Status.NOT_FOUND).build();
+    @Path("/{tripId}/update-name-description")
+    public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId, NameDescriptionTravelRequestDto request) {
+        Trip trip = tripRepository.findById(tripId);
+        if (trip == null) return Response.status(Response.Status.NOT_FOUND).build();
 
         Trip updatedTrip = updateTripUseCase.updateNameAndDescription(tripId, request);
-        return Response.ok(TripMapper.mapToTripResponseDTO(updatedTrip)).build();
+        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
+        return Response.ok(tripResponse).build();
     }
-
 }
