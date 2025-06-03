@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.example.application.dto.trip.request.NameDescriptionTravelRequestDto;
 import org.example.application.dto.trip.request.TripRequestDTO;
@@ -45,8 +46,6 @@ public class TripController {
                     .entity(e.getMessage())
                     .build();
         }
-
-
     }
 
     @GET
@@ -62,21 +61,49 @@ public class TripController {
     @Transactional
     @Path("/{tripId}/update-trip")
     public Response updateTrip(@PathParam("tripId") Long tripId, @Valid TripRequestDTO tripRequest) {
-        TripDataValidator.validateTripRequest(tripRequest);
-        Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
-        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
-        return Response.ok(tripResponse).build();
+        try {
+            TripDataValidator.validateTripRequest(tripRequest);
+            Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
+            TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
+            return Response.ok(tripResponse).build();
+        } catch (NotFoundException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(e.getMessage())
+                    .build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(e.getMessage())
+                    .build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("An error occurred while updating the trip: " + e.getMessage())
+                    .build();
+        }
     }
 
     @PATCH
     @Transactional
     @Path("/{tripId}/update-name-description")
-    public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId, NameDescriptionTravelRequestDto request) {
-        Trip trip = tripRepository.findById(tripId);
-        if (trip == null) return Response.status(Response.Status.NOT_FOUND).build();
+    public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId, @Valid NameDescriptionTravelRequestDto request) {
+        try {
+            if (request.getName() == null || request.getDescription() == null || 
+                request.getName().isBlank() || request.getDescription().isBlank()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Name and description cannot be null or empty")
+                        .build();
+            }
 
-        Trip updatedTrip = updateTripUseCase.updateNameAndDescription(tripId, request);
-        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
-        return Response.ok(tripResponse).build();
+            Trip updatedTrip = updateTripUseCase.updateNameAndDescription(tripId, request);
+            TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
+            return Response.ok(tripResponse).build();
+        } catch (NotFoundException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(e.getMessage())
+                    .build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("An error occurred while updating the trip: " + e.getMessage())
+                    .build();
+        }
     }
 }
