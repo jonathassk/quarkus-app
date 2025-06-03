@@ -9,6 +9,7 @@ import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.example.application.dto.trip.request.NameDescriptionTravelRequestDto;
 import org.example.application.dto.trip.request.TripRequestDTO;
+import org.example.application.dto.trip.request.UserInlcudeRequestDTO;
 import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
@@ -17,6 +18,8 @@ import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.TripMapper;
 import org.example.utils.TripDataValidator;
+
+import java.util.List;
 
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
@@ -105,5 +108,16 @@ public class TripController {
                     .entity("An error occurred while updating the trip: " + e.getMessage())
                     .build();
         }
+    }
+
+    @PATCH
+    @Path("/{tripId}/update-users-trip")
+    @Transactional
+    public Response updateUsersTrip(@PathParam("tripId") Long tripId, @Valid List<UserInlcudeRequestDTO> request) {
+        request.forEach(userRequest -> {
+            if (userRequest.getUserId() == null || userRequest.getPermissionLevel() == null) throw new IllegalArgumentException("User ID and permission level cannot be null");
+        });
+        Trip updatedTrip = updateTripUseCase.updateUsersTrip(tripId, request);
+        return Response.status(201).entity(updatedTrip).build();
     }
 }

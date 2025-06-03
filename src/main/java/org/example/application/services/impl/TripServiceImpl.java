@@ -1,6 +1,6 @@
 package org.example.application.services.impl;
 
-import jakarta.persistence.EntityManager;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.trip.ActivityDTO;
 import org.example.application.dto.trip.MealDTO;
@@ -8,6 +8,7 @@ import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.request.TripRequestDTO;
 import org.example.application.services.TripService;
 import org.example.domain.entity.*;
+import org.example.domain.repository.TripSegmentRepository;
 import org.modelmapper.ModelMapper;
 
 import java.time.Instant;
@@ -16,9 +17,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
+@RequiredArgsConstructor
 public class TripServiceImpl implements TripService {
 
-    ModelMapper modelMapper = new ModelMapper();
+    private final TripSegmentRepository tripSegmentRepository;
+    private final ModelMapper modelMapper = new ModelMapper();
+
     @Override
     public TripUser createTripUser(User user, Trip trip) {
         TripUser tripUser = new TripUser();
@@ -79,28 +83,27 @@ public class TripServiceImpl implements TripService {
 
         trip.setUpdatedAt(Instant.now());
     }
+
     @Override
-    public void updateTripSegments(Trip trip, List<TripSegmentDTO> segmentDTOs, EntityManager em) {
+    public void updateTripSegments(Trip trip, List<TripSegmentDTO> segmentDTOs) {
         log.info("Updating segments for trip id: {}", trip.id);
 
-        removeExistingSegments(trip, em);
-
-        segmentDTOs.forEach(segmentDTO -> {
-            TripSegment newSegment = createNewSegment(segmentDTO, trip);
-            em.persist(newSegment);
-            trip.getSegments().add(newSegment);
-            log.info("Successfully added new segment with cityId: {}", segmentDTO.getCityId());
-        });
-    }
-
-    private void removeExistingSegments(Trip trip, EntityManager em) {
+        // Remove segmentos existentes
         if (trip.getSegments() != null) {
             log.info("Removing {} existing segments", trip.getSegments().size());
-            new ArrayList<>(trip.getSegments()).forEach(em::remove);
+            trip.getSegments().forEach(tripSegmentRepository::delete);
             trip.getSegments().clear();
         } else {
             trip.setSegments(new ArrayList<>());
         }
+
+        // Cria novos segmentos
+        segmentDTOs.forEach(segmentDTO -> {
+            TripSegment newSegment = createNewSegment(segmentDTO, trip);
+            tripSegmentRepository.persist(newSegment);
+            trip.getSegments().add(newSegment);
+            log.info("Successfully added new segment with cityId: {}", segmentDTO.getCityId());
+        });
     }
 
     private TripSegment createNewSegment(TripSegmentDTO segmentDTO, Trip trip) {

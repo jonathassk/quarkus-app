@@ -64,8 +64,8 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
-    public TripService tripService() {
-        return new TripServiceImpl();
+    public TripService tripService(TripSegmentRepository tripSegmentRepository) {
+        return new TripServiceImpl(tripSegmentRepository);
     }
 
     @Produces
@@ -86,8 +86,9 @@ public class ApplicationConfig {
     @ApplicationScoped
     public UpdateTripUseCase updateTripUseCase(
             TripRepository tripRepository,
+            UserRepository userRepository,
             TripService tripService) {
-        return new UpdateTripUseCaseImpl(tripRepository, tripService);
+        return new UpdateTripUseCaseImpl(tripRepository, userRepository, tripService);
     }
 
     @Produces

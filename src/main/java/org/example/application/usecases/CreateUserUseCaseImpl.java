@@ -44,6 +44,7 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
         UserResponseDTO response = mapper.map(user, UserResponseDTO.class);
         response.setToken(userService.validateUser(user, userRequest.getPassword()));
         response.setExpiresIn(18000L);
+        response.setId(user.id);
         return response;
     }
 

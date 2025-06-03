@@ -28,6 +28,7 @@ public class LoginUserUseCaseImpl implements LoginUserUseCase {
                 .email(user.get().getEmail())
                 .username(user.get().getUsername())
                 .fullname(user.get().getFullName())
+                .id(user.get().id)
                 .expiresIn(18000L)
                 .build();
     }
