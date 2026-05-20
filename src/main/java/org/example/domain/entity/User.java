@@ -27,8 +27,11 @@ public class User extends PanacheEntity {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
+    @Column(name = "password_hash", length = 255)
     private String passwordHash;
+
+    @Column(name = "cognito_sub", unique = true, length = 128)
+    private String cognitoSub;
 
     @Column(length = 255)
     private String city;
@@ -95,7 +98,9 @@ public class User extends PanacheEntity {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
-    @Column(name = "UserPermissionLevel")
+    @Column(name = "role", length = 20)
+    @Builder.Default
+    private String role = "USER";
 
     @PrePersist
     protected void onCreate() {

@@ -9,6 +9,7 @@ import lombok.*;
 @Getter
 public class UserResponseDTO {
     private String token;
+    private String refreshToken;
     private Long expiresIn;
     private String username;
     private Long id;

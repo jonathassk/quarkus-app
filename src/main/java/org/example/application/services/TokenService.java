@@ -6,6 +6,7 @@ import java.security.GeneralSecurityException;
 
 public interface TokenService {
     String generateToken(User user, String password) throws GeneralSecurityException, IOException;
+    String generateRefreshToken(User user) throws GeneralSecurityException, IOException;
     String validateToken(String token);
     String refreshToken(String token);
 }

@@ -1,0 +1,244 @@
+{
+  "name": "Viagem para Paris - Primavera 2024",
+  "description": "Uma viagem incrível para a cidade luz durante a primavera, explorando museus, gastronomia e cultura francesa.",
+  "budgetTotal": 8500.00,
+  "startDate": "2024-04-15",
+  "endDate": "2024-04-17",
+  "coverImageUrl": "https://example.com/images/paris-spring-2024.jpg",
+  "visibility": "private",
+  "createdBy": {
+    "id": 1,
+    "fullName": "João Silva",
+    "email": "joao.silva@email.com",
+    "username": "joao_silva"
+  },
+  "users": [
+    {
+      "user": {
+        "id": 1,
+        "fullName": "João Silva",
+        "email": "joao.silva@email.com",
+        "username": "joao_silva"
+      },
+      "permissionLevel": "OWNER"
+    },
+    {
+      "user": {
+        "id": 2,
+        "fullName": "Maria Santos",
+        "email": "maria.santos@email.com",
+        "username": "maria_santos"
+      },
+      "permissionLevel": "ADMIN"
+    }
+  ],
+  "segments": [
+    {
+      "cityId": "paris-fr",
+      "arrivalDate": "2024-04-15",
+      "departureDate": "2024-04-15",
+      "notes": "Primeiro dia em Paris - chegada e exploração inicial da cidade",
+      "activities": [
+        {
+          "name": "Visita ao Museu do Louvre",
+          "activityType": "CULTURAL",
+          "address": "Rue de Rivoli, 75001 Paris, França",
+          "cost": 17.00,
+          "site": "https://www.louvre.fr",
+          "date": "2024-04-15"
+        },
+        {
+          "name": "Passeio de Barco pelo Rio Sena",
+          "activityType": "TURISMO",
+          "address": "Port de la Bourdonnais, 75007 Paris, França",
+          "cost": 15.00,
+          "site": "https://www.bateauxparisiens.com",
+          "date": "2024-04-15"
+        },
+        {
+          "name": "Subida na Torre Eiffel",
+          "activityType": "TURISMO",
+          "address": "Champ de Mars, 5 Avenue Anatole France, 75007 Paris, França",
+          "cost": 26.10,
+          "site": "https://www.toureiffel.paris",
+          "date": "2024-04-15"
+        },
+        {
+          "name": "Visita ao Arco do Triunfo",
+          "activityType": "CULTURAL",
+          "address": "Place Charles de Gaulle, 75008 Paris, França",
+          "cost": 13.00,
+          "site": "https://www.paris-arc-de-triomphe.fr",
+          "date": "2024-04-15"
+        }
+      ],
+      "meals": [
+        {
+          "mealType": "BREAKFAST",
+          "name": "Café da manhã no hotel",
+          "description": "Café continental com croissants e café",
+          "location": "Hotel Le Marais",
+          "address": "Rue de Rivoli, 75004 Paris, França",
+          "cost": 0.00,
+          "date": "2024-04-15"
+        },
+        {
+          "mealType": "LUNCH",
+          "name": "Almoço no Le Comptoir du Relais",
+          "description": "Cozinha francesa tradicional - confit de pato com batatas",
+          "location": "Le Comptoir du Relais",
+          "address": "9 Carrefour de l'Odéon, 75006 Paris, França",
+          "cost": 45.00,
+          "date": "2024-04-15"
+        },
+        {
+          "mealType": "DINNER",
+          "name": "Jantar no L'Ami Louis",
+          "description": "Restaurante tradicional francês - especialidade em frango assado",
+          "location": "L'Ami Louis",
+          "address": "32 Rue du Vertbois, 75003 Paris, França",
+          "cost": 85.00,
+          "date": "2024-04-15"
+        }
+      ]
+    },
+    {
+      "cityId": "paris-fr",
+      "arrivalDate": "2024-04-16",
+      "departureDate": "2024-04-16",
+      "notes": "Segundo dia - foco em arte e gastronomia",
+      "activities": [
+        {
+          "name": "Visita ao Museu d'Orsay",
+          "activityType": "CULTURAL",
+          "address": "1 Rue de la Légion d'Honneur, 75007 Paris, França",
+          "cost": 16.00,
+          "site": "https://www.musee-orsay.fr",
+          "date": "2024-04-16"
+        },
+        {
+          "name": "Passeio pelo Jardim de Luxemburgo",
+          "activityType": "LAZER",
+          "address": "Rue de Médicis, 75006 Paris, França",
+          "cost": 0.00,
+          "site": "https://www.senat.fr/visite/jardin",
+          "date": "2024-04-16"
+        },
+        {
+          "name": "Visita à Catedral de Notre-Dame",
+          "activityType": "CULTURAL",
+          "address": "6 Parvis Notre-Dame - Pl. Jean-Paul II, 75004 Paris, França",
+          "cost": 0.00,
+          "site": "https://www.notredamedeparis.fr",
+          "date": "2024-04-16"
+        },
+        {
+          "name": "Tour pelo Bairro de Montmartre",
+          "activityType": "TURISMO",
+          "address": "Montmartre, 75018 Paris, França",
+          "cost": 0.00,
+          "site": "https://www.parisinfo.com/montmartre",
+          "date": "2024-04-16"
+        }
+      ],
+      "meals": [
+        {
+          "mealType": "BREAKFAST",
+          "name": "Café da manhã no hotel",
+          "description": "Café continental com pães frescos",
+          "location": "Hotel Le Marais",
+          "address": "Rue de Rivoli, 75004 Paris, França",
+          "cost": 0.00,
+          "date": "2024-04-16"
+        },
+        {
+          "mealType": "LUNCH",
+          "name": "Almoço no Frenchie",
+          "description": "Cozinha francesa moderna - menu degustação",
+          "location": "Frenchie",
+          "address": "5 Rue du Nil, 75002 Paris, França",
+          "cost": 65.00,
+          "date": "2024-04-16"
+        },
+        {
+          "mealType": "DINNER",
+          "name": "Jantar no Le Chateaubriand",
+          "description": "Restaurante gastronômico - menu surpresa do chef",
+          "location": "Le Chateaubriand",
+          "address": "129 Avenue Parmentier, 75011 Paris, França",
+          "cost": 95.00,
+          "date": "2024-04-16"
+        }
+      ]
+    },
+    {
+      "cityId": "paris-fr",
+      "arrivalDate": "2024-04-17",
+      "departureDate": "2024-04-17",
+      "notes": "Último dia - compras e despedida de Paris",
+      "activities": [
+        {
+          "name": "Visita ao Palácio de Versalhes",
+          "activityType": "CULTURAL",
+          "address": "Place d'Armes, 78000 Versailles, França",
+          "cost": 20.00,
+          "site": "https://en.chateauversailles.fr",
+          "date": "2024-04-17"
+        },
+        {
+          "name": "Compras na Galeries Lafayette",
+          "activityType": "SHOPPING",
+          "address": "40 Boulevard Haussmann, 75009 Paris, França",
+          "cost": 0.00,
+          "site": "https://www.galerieslafayette.com",
+          "date": "2024-04-17"
+        },
+        {
+          "name": "Passeio pela Champs-Élysées",
+          "activityType": "TURISMO",
+          "address": "Avenue des Champs-Élysées, 75008 Paris, França",
+          "cost": 0.00,
+          "site": "https://www.parisinfo.com/champs-elysees",
+          "date": "2024-04-17"
+        },
+        {
+          "name": "Visita ao Centro Pompidou",
+          "activityType": "CULTURAL",
+          "address": "Place Georges-Pompidou, 75004 Paris, França",
+          "cost": 14.00,
+          "site": "https://www.centrepompidou.fr",
+          "date": "2024-04-17"
+        }
+      ],
+      "meals": [
+        {
+          "mealType": "BREAKFAST",
+          "name": "Café da manhã no hotel",
+          "description": "Café continental com frutas frescas",
+          "location": "Hotel Le Marais",
+          "address": "Rue de Rivoli, 75004 Paris, França",
+          "cost": 0.00,
+          "date": "2024-04-17"
+        },
+        {
+          "mealType": "LUNCH",
+          "name": "Almoço no Septime",
+          "description": "Cozinha francesa contemporânea - menu sazonal",
+          "location": "Septime",
+          "address": "80 Rue de Charonne, 75011 Paris, França",
+          "cost": 55.00,
+          "date": "2024-04-17"
+        },
+        {
+          "mealType": "DINNER",
+          "name": "Jantar de despedida no Le Jules Verne",
+          "description": "Restaurante na Torre Eiffel - vista panorâmica de Paris",
+          "location": "Le Jules Verne",
+          "address": "Avenue Gustave Eiffel, 75007 Paris, França",
+          "cost": 120.00,
+          "date": "2024-04-17"
+        }
+      ]
+    }
+  ]
+} 

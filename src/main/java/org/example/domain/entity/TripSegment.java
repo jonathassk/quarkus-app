@@ -4,6 +4,7 @@ import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -26,6 +27,9 @@ public class TripSegment extends PanacheEntity {
 
     @Column(columnDefinition = "TEXT")
     private String notes;
+
+    @Column(name = "daily_cost", precision = 10, scale = 2)
+    private BigDecimal dailyCost;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "trip_id", nullable = false)

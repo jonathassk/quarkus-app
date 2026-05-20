@@ -27,6 +27,10 @@ public class UserRepository implements PanacheRepository<User> {
         return find("email = ?1 or username = ?1", email).firstResultOptional();
     }
 
+    public Optional<User> findByCognitoSub(String cognitoSub) {
+        return find("cognitoSub", cognitoSub).firstResultOptional();
+    }
+
     public User CreateUser(User user) {
         persist(user);
         return user;

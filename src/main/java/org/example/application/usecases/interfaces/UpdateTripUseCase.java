@@ -12,4 +12,7 @@ public interface UpdateTripUseCase {
     Trip updateUsersTrip(Long tripId, List<UserInlcudeRequestDTO> tripRequestDTO);
     Trip updateTripUserRelation(Long tripId, Long userId, String permissionLevel);
     Trip updateNameAndDescription(Long tripId, NameDescriptionTravelRequestDto tripRequestDTO);
+
+    /** Apaga a viagem; somente o usuário criador pode executar. */
+    void deleteTrip(Long tripId, Long requesterUserId);
 }

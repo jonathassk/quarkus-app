@@ -17,6 +17,10 @@ public class MealDTO {
     private String description;
     private String restaurantName;
     private String address;
+    /** Latitude WGS84 para mapas */
+    private Double latitude;
+    /** Longitude WGS84 para mapas */
+    private Double longitude;
     private Instant startTime;
     private Instant endTime;
     private LocalDate date;

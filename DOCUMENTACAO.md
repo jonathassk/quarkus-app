@@ -9,30 +9,30 @@ Este projeto é uma aplicação backend desenvolvida com **Quarkus** (Java), foc
 ## Sumário
 
 - [Tecnologias Utilizadas](#tecnologias-utilizadas)
-- [Como Executar](#como-executar)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Principais Entidades](#principais-entidades)
-- [DTOs (Data Transfer Objects)](#dtos-data-transfer-objects)
-- [Endpoints REST](#endpoints-rest)
-- [Segurança e Autenticação](#segurança-e-autenticação)
-- [Configurações Importantes](#configurações-importantes)
-- [Testes](#testes)
-- [Dicas de Desenvolvimento](#dicas-de-desenvolvimento)
+  - [Como Executar](#como-executar)
+  - [Estrutura do Projeto](#estrutura-do-projeto)
+  - [Principais Entidades](#principais-entidades)
+  - [DTOs (Data Transfer Objects)](#dtos-data-transfer-objects)
+  - [Endpoints REST](#endpoints-rest)
+  - [Segurança e Autenticação](#segurança-e-autenticação)
+  - [Configurações Importantes](#configurações-importantes)
+  - [Testes](#testes)
+  - [Dicas de Desenvolvimento](#dicas-de-desenvolvimento)
 
 ---
 
 ## Tecnologias Utilizadas
 
 - **Quarkus 3.22.3**
-- Java 21
-- Hibernate ORM + Panache
-- PostgreSQL (relacional) e MongoDB (NoSQL)
-- ModelMapper (mapeamento DTO/Entidade)
-- Lombok (boilerplate)
-- JWT (autenticação)
-- BCrypt (criptografia de senha)
-- JUnit5, Mockito (testes)
-- Docker/Docker Compose
+  - Java 21
+  - Hibernate ORM + Panache
+  - PostgreSQL (relacional) e MongoDB (NoSQL)
+  - ModelMapper (mapeamento DTO/Entidade)
+  - Lombok (boilerplate)
+  - JWT (autenticação)
+  - BCrypt (criptografia de senha)
+  - JUnit5, Mockito (testes)
+  - Docker/Docker Compose
 
 ---
 
@@ -88,11 +88,11 @@ src/
 ## Principais Entidades
 
 - **User**: Usuário do sistema (id, nome, email, senha criptografada, etc).
-- **Trip**: Viagem (id, nome, descrição, datas, orçamento, etc).
-- **TripUser**: Relação usuário-viagem (permissão: OWNER, MEMBER, etc).
-- **TripSegment**: Segmentos de uma viagem (cidade, datas, notas).
-- **Activity**: Atividades em um segmento.
-- **Meal**: Refeições em um segmento.
+  - **Trip**: Viagem (id, nome, descrição, datas, orçamento, etc).
+  - **TripUser**: Relação usuário-viagem (permissão: OWNER, MEMBER, etc).
+  - **TripSegment**: Segmentos de uma viagem (cidade, datas, notas).
+  - **Activity**: Atividades em um segmento.
+  - **Meal**: Refeições em um segmento.
 
 ---
 
@@ -101,14 +101,14 @@ src/
 ### Usuário
 
 - **UserCreateRequestDTO**: Dados para criação de usuário (nome, email, senha, etc).
-- **UserLoginRequestDTO**: Dados para login (email, senha).
-- **UserResponseDTO**: Dados retornados ao cliente.
+  - **UserLoginRequestDTO**: Dados para login (email, senha).
+  - **UserResponseDTO**: Dados retornados ao cliente.
 
 ### Viagem
 
 - **TripRequestDTO**: Dados para criar/atualizar viagem.
-- **TripResponseDTO**: Dados retornados de uma viagem.
-- **TripSegmentDTO, ActivityDTO, MealDTO**: Dados de segmentos, atividades e refeições.
+  - **TripResponseDTO**: Dados retornados de uma viagem.
+  - **TripSegmentDTO, ActivityDTO, MealDTO**: Dados de segmentos, atividades e refeições.
 
 ---
 
@@ -119,39 +119,39 @@ src/
 - `POST /api/v1/users/create-user`  
   Cria um novo usuário.
 
-- `POST /api/v1/users/login`  
-  Realiza login e retorna dados do usuário.
+  - `POST /api/v1/users/login`  
+    Realiza login e retorna dados do usuário.
 
-- `GET /api/v1/users/test`  
-  Endpoint de teste.
+  - `GET /api/v1/users/test`  
+    Endpoint de teste.
 
 ### Viagens
 
 - `POST /api/v1/trips/create-trip`  
   Cria uma nova viagem.
 
-- `GET /api/v1/trips/{tripId}`  
-  Busca detalhes de uma viagem.
+  - `GET /api/v1/trips/{tripId}`  
+    Busca detalhes de uma viagem.
 
-- `PUT /api/v1/trips/{tripId}/update-trip`  
-  Atualiza dados completos da viagem.
+  - `PUT /api/v1/trips/{tripId}/update-trip`  
+    Atualiza dados completos da viagem.
 
-- `PATCH /api/v1/trips/{tripId}/update-name-description`  
-  Atualiza apenas nome e descrição.
+  - `PATCH /api/v1/trips/{tripId}/update-name-description`  
+    Atualiza apenas nome e descrição.
 
-- `PATCH /api/v1/trips/{tripId}/update-users-trip`  
-  Atualiza usuários e permissões da viagem.
+  - `PATCH /api/v1/trips/{tripId}/update-users-trip`  
+    Atualiza usuários e permissões da viagem.
 
 ---
 
 ## Segurança e Autenticação
 
 - **JWT**: Utilizado para autenticação e autorização.
-- **BCrypt**: Senhas de usuários são criptografadas antes de persistir.
-- **Configuração JWT**:  
-  - Algoritmo: RS256  
-  - Chaves configuradas em `application.properties`  
-  - Token lifespan: 1 hora
+  - **BCrypt**: Senhas de usuários são criptografadas antes de persistir.
+  - **Configuração JWT**:  
+    - Algoritmo: RS256  
+    - Chaves configuradas em `application.properties`  
+    - Token lifespan: 1 hora
 
 ---
 
@@ -169,44 +169,44 @@ src/
     quarkus.mongodb.connection-string=mongodb://localhost:27017
     quarkus.mongodb.database=quarkus-app
     ```
-- **Hibernate**:  
-  - Geração automática de schema: `quarkus.hibernate-orm.database.generation=update`
-  - Log de SQL: `quarkus.hibernate-orm.log.sql=true`
-- **JWT**:  
-  - `quarkus.security.jwt.enabled=true`
-  - `mp.jwt.verify.publickey.location=/META-INF/resources/publicKey.pem`
-  - `mp.jwt.sign.key.location=privateKey.pem`
-- **Porta HTTP**:  
-  - `quarkus.http.port=8080`
+  - **Hibernate**:  
+    - Geração automática de schema: `quarkus.hibernate-orm.database.generation=update`
+    - Log de SQL: `quarkus.hibernate-orm.log.sql=true`
+  - **JWT**:  
+    - `quarkus.security.jwt.enabled=true`
+    - `mp.jwt.verify.publickey.location=/META-INF/resources/publicKey.pem`
+    - `mp.jwt.sign.key.location=privateKey.pem`
+  - **Porta HTTP**:  
+    - `quarkus.http.port=8080`
 
 ---
 
 ## Testes
 
 - Testes unitários e de integração com JUnit5, Mockito e Instancio.
-- Para rodar os testes:
-  ```sh
-  ./mvnw test
-  ```
+  - Para rodar os testes:
+    ```sh
+    ./mvnw test
+    ```
 
 ---
 
 ## Dicas de Desenvolvimento
 
 - **Injeção de Dependências**: Use sempre CDI (`@Inject`, `@ApplicationScoped`, etc) para facilitar testes e manutenção.
-- **Mapeamento DTO/Entidade**: Centralize o uso do ModelMapper para evitar duplicidade de lógica.
-- **Transações**: Use `@Transactional` em métodos de escrita no banco.
-- **Senhas**: Nunca armazene senhas em texto puro. Sempre utilize BCrypt.
-- **Validação**: Use DTOs e validadores para garantir integridade dos dados recebidos.
+  - **Mapeamento DTO/Entidade**: Centralize o uso do ModelMapper para evitar duplicidade de lógica.
+  - **Transações**: Use `@Transactional` em métodos de escrita no banco.
+  - **Senhas**: Nunca armazene senhas em texto puro. Sempre utilize BCrypt.
+  - **Validação**: Use DTOs e validadores para garantir integridade dos dados recebidos.
 
 ---
 
 ## Referências
 
 - [Quarkus - Documentação Oficial](https://quarkus.io/guides/)
-- [ModelMapper](http://modelmapper.org/)
-- [BCrypt](https://www.mindrot.org/projects/jBCrypt/)
-- [JWT](https://jwt.io/)
+  - [ModelMapper](http://modelmapper.org/)
+  - [BCrypt](https://www.mindrot.org/projects/jBCrypt/)
+  - [JWT](https://jwt.io/)
 
 ---
 

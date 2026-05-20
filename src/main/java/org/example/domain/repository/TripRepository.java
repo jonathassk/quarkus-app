@@ -13,6 +13,35 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class TripRepository implements PanacheRepository<Trip> {
+
+    /**
+     * Viagens onde o usuário é criador ou está em {@code trip_users}.
+     */
+    @Transactional
+    public List<Trip> findAllByLinkedUserId(Long userId) {
+        return getEntityManager()
+                .createQuery(
+                        "SELECT DISTINCT t FROM Trip t LEFT JOIN t.users u "
+                                + "WHERE t.createdBy.id = :uid OR u.user.id = :uid "
+                                + "ORDER BY t.startDate DESC NULLS LAST, t.id DESC",
+                        Trip.class)
+                .setParameter("uid", userId)
+                .getResultList();
+    }
+
+    /** Criador da viagem ou participante em {@code trip_users}. */
+    public boolean isUserLinkedToTrip(Long tripId, Long userId) {
+        Long count = getEntityManager()
+                .createQuery(
+                        "SELECT COUNT(t) FROM Trip t WHERE t.id = :tid AND ("
+                                + "t.createdBy.id = :uid OR EXISTS (SELECT 1 FROM TripUser tu "
+                                + "WHERE tu.trip.id = t.id AND tu.user.id = :uid))",
+                        Long.class)
+                .setParameter("tid", tripId)
+                .setParameter("uid", userId)
+                .getSingleResult();
+        return count != null && count > 0;
+    }
     
     @Transactional
     public Trip findByIdWithLock(Long id) {

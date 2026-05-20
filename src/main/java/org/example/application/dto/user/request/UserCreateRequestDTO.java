@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import jakarta.json.bind.annotation.JsonbTypeAdapter;
 import org.example.domain.enums.Gender;
+import org.example.utils.GenderJsonbAdapter;
 
 @Data
 @Builder
@@ -21,6 +23,7 @@ public class UserCreateRequestDTO {
     private String dateOfBirth;
     private String language;
     private String phoneNumber;
+    @JsonbTypeAdapter(GenderJsonbAdapter.class)
     private Gender gender;
     private String timezone;
     private String bio;

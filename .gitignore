@@ -6,6 +6,9 @@ pom.xml.versionsBackup
 release.properties
 .flattened-pom.xml
 
+# Cache Maven local do projeto (nunca versionar)
+.m2/
+
 # Eclipse
 .project
 .classpath
@@ -36,8 +39,18 @@ nb-configuration.xml
 *.orig
 *.rej
 
-# Local environment
+# Ambiente local e segredos
 .env
+.env.local
+.env.*.local
+
+# Chave privada JWT — use variável de ambiente / Secrets Manager na Lambda
+**/privateKey.pem
+
+# Deploy AWS local
+samconfig.toml
+.aws-sam/
+function.zip
 
 # Plugin directory
 /.quarkus/cli/plugins/

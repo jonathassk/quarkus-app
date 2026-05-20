@@ -3,6 +3,7 @@ package org.example.domain.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import org.example.domain.enums.TripStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,6 +27,9 @@ public class Trip extends PanacheEntity {
     @Column(name = "budget_total", precision = 10, scale = 2)
     private BigDecimal budgetTotal;
 
+    @Column(name = "currency", length = 3)
+    private String currency;
+
     @Column(name = "start_date")
     private LocalDate startDate;
 
@@ -41,6 +45,10 @@ public class Trip extends PanacheEntity {
 
     @Column(length = 20)
     private String visibility; // Pode ser transformado em enum depois
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trip_status", length = 20)
+    private TripStatus status;
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TripSegment> segments;
@@ -58,10 +66,16 @@ public class Trip extends PanacheEntity {
     void prePersist() {
         createdAt = Instant.now();
         updatedAt = Instant.now();
+        syncStatusFromDates();
     }
 
     @PreUpdate
     void preUpdate() {
         updatedAt = Instant.now();
+        syncStatusFromDates();
+    }
+
+    private void syncStatusFromDates() {
+        this.status = TripStatus.fromDates(startDate, endDate, LocalDate.now());
     }
 } 

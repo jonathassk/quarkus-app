@@ -46,11 +46,6 @@ public class ModelMapperFactory {
     }
 
     public static TripResponseDTO mapperResponseTrip(Trip trip) {
-        ModelMapper modelMapper = new ModelMapper();
-        modelMapper.getConfiguration()
-                .setMatchingStrategy(MatchingStrategies.STRICT)
-                .setSkipNullEnabled(true);
-
-        return modelMapper.map(trip, TripResponseDTO.class);
+        return TripMapper.mapToTripResponseDTO(trip);
     }
 } 

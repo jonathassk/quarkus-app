@@ -16,6 +16,8 @@ import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
+import org.example.controller.AuthController;
+import org.example.controller.CognitoController;
 import org.example.controller.TripController;
 import org.example.controller.UserController;
 import org.example.domain.repository.*;
@@ -24,12 +26,9 @@ import org.example.utils.UserDataVerification;
 @ApplicationScoped
 public class ApplicationConfig {
 
-    @ConfigProperty(name = "mp.jwt.verify.issuer")
-    String issuer;
+    @ConfigProperty(name = "internal.secret", defaultValue = "baggagi-internal-dev")
+    String internalSecret;
 
-    @ConfigProperty(name = "mp.jwt.sign.key.location")
-    String privateKeyLocation;
-    
     @Produces
     @ApplicationScoped
     public UserDataVerification userDataVerification() {
@@ -106,8 +105,9 @@ public class ApplicationConfig {
     @ApplicationScoped
     public LoginUserUseCase loginUserUseCase(
             UserService userService,
-            UserRepository userRepository) {
-        return new LoginUserUseCaseImpl(userService, userRepository);
+            UserRepository userRepository,
+            TokenService tokenService) {
+        return new LoginUserUseCaseImpl(userService, userRepository, tokenService);
     }
 
     @Produces
@@ -116,8 +116,9 @@ public class ApplicationConfig {
             CreateTripUseCase createTripUseCase,
             UpdateTripUseCase updateTripUseCase,
             UserRepository userRepository,
-            TripRepository tripRepository) {
-        return new TripController(createTripUseCase, updateTripUseCase, userRepository, tripRepository);
+            TripRepository tripRepository,
+            TokenService tokenService) {
+        return new TripController(createTripUseCase, updateTripUseCase, userRepository, tripRepository, tokenService);
     }
 
     @Produces
@@ -127,5 +128,19 @@ public class ApplicationConfig {
             CreateUserUseCase createUserUseCase,
             LoginUserUseCase loginUserUseCase) {
         return new UserController(userDataVerification, createUserUseCase, loginUserUseCase);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public AuthController authController(
+            TokenService tokenService,
+            UserRepository userRepository) {
+        return new AuthController(tokenService, userRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public CognitoController cognitoController(UserRepository userRepository) {
+        return new CognitoController(userRepository, internalSecret);
     }
 } 

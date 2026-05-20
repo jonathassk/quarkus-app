@@ -18,6 +18,10 @@ public class ActivityDTO {
     private Instant endTime;
     private LocalDate date;
     private String address;
+    /** Latitude WGS84 (ex.: 48.8606) para mapas */
+    private Double latitude;
+    /** Longitude WGS84 (ex.: 2.3376) para mapas */
+    private Double longitude;
     private BigDecimal cost;
     private String notes;
 }

@@ -95,6 +95,10 @@
             <artifactId>quarkus-smallrye-jwt-build</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-amazon-lambda-http</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <version>5.18.0</version>
@@ -158,6 +162,40 @@
                         <maven.home>${maven.home}</maven.home>
                     </systemPropertyVariables>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>patch-sam-snapstart</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <replace file="${project.build.directory}/sam.jvm.yaml"
+                                         token="  Globals:"
+                                         value="  Parameters:&#10;    DbPassword:&#10;      Type: String&#10;      NoEcho: true&#10;      Description: Senha do PostgreSQL (Neon)&#10;&#10;  Globals:"
+                                         failOnNoReplacements="false"/>
+                                <replace file="${project.build.directory}/sam.jvm.yaml"
+                                         token="  Globals:&#10;    Api:"
+                                         value="  Globals:&#10;    HttpApi:&#10;      CorsConfiguration:&#10;        AllowOrigins:&#10;          - http://localhost:3000&#10;          - https://baggagi.com&#10;          - https://www.baggagi.com&#10;          - https://baqqaqi.com&#10;          - https://www.baqqaqi.com&#10;        AllowMethods:&#10;          - GET&#10;          - POST&#10;          - PUT&#10;          - PATCH&#10;          - DELETE&#10;          - OPTIONS&#10;        AllowHeaders:&#10;          - Authorization&#10;          - Content-Type&#10;          - Origin&#10;          - X-Requested-With&#10;        MaxAge: 86400&#10;    Api:"
+                                         failOnNoReplacements="false"/>
+                                <replace file="${project.build.directory}/sam.jvm.yaml"
+                                         token="        MemorySize: 512&#10;        Policies: AWSLambdaBasicExecutionRole&#10;        Timeout: 15&#10;        Events:"
+                                         value="        MemorySize: 1024&#10;        Policies: AWSLambdaBasicExecutionRole&#10;        Environment:&#10;          Variables:&#10;            QUARKUS_PROFILE: lambda&#10;            QUARKUS_DATASOURCE_PASSWORD: !Ref DbPassword&#10;            QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000,https://baggagi.com,https://www.baggagi.com,https://baqqaqi.com,https://www.baqqaqi.com&#10;            JAVA_TOOL_OPTIONS: -Djava.net.preferIPv4Stack=true&#10;        Timeout: 30&#10;        AutoPublishAlias: live&#10;        SnapStart:&#10;          ApplyOn: PublishedVersions&#10;        Events:"
+                                         failOnNoReplacements="false"/>
+                                <replace file="${project.build.directory}/sam.jvm.yaml"
+                                         token="        Events:&#10;          HttpApiEvent:&#10;            Type: HttpApi&#10;"
+                                         value="        Events:&#10;          HttpApiProxyRoot:&#10;            Type: HttpApi&#10;            Properties:&#10;              Path: /&#10;              Method: ANY&#10;          HttpApiProxy:&#10;            Type: HttpApi&#10;            Properties:&#10;              Path: /{proxy+}&#10;              Method: ANY&#10;"
+                                         failOnNoReplacements="false"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>

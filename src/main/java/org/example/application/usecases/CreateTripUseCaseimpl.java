@@ -2,10 +2,12 @@ package org.example.application.usecases;
 
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.trip.request.TripRequestDTO;
 import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.ActivityDTO;
 import org.example.application.dto.trip.MealDTO;
+import org.example.application.dto.trip.TripUserDTO;
 import org.example.application.services.TripService;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.domain.entity.*;
@@ -15,7 +17,9 @@ import org.modelmapper.ModelMapper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
+@Slf4j
 @RequiredArgsConstructor
 public class CreateTripUseCaseimpl implements CreateTripUseCase {
 
@@ -31,34 +35,61 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
         Trip trip = mapper.map(tripRequest, Trip.class);
 
         User creator = userRepository.findById(tripRequest.getCreatedBy());
-        if (creator == null) throw new NotFoundException("User not found");
+        if (creator == null) {
+            log.warn("Create trip failed: creator not found, createdBy={}", tripRequest.getCreatedBy());
+            throw new NotFoundException("User not found");
+        }
         trip.setCreatedBy(creator);
-
-        TripUser tripUser = tripService.createTripUser(creator, trip);
 
         if (tripRequest.getSegments() != null && !tripRequest.getSegments().isEmpty()) {
             List<TripSegment> segments = new ArrayList<>();
 
             for (TripSegmentDTO segmentDTO : tripRequest.getSegments()) {
-                TripSegment segment = mapper.map(segmentDTO, TripSegment.class);
+                TripSegment segment = new TripSegment();
+                segment.setCityId(segmentDTO.getCityId());
+                segment.setArrivalDate(segmentDTO.getArrivalDate());
+                segment.setDepartureDate(segmentDTO.getDepartureDate());
+                segment.setNotes(segmentDTO.getNotes());
+                segment.setDailyCost(segmentDTO.getDailyCost());
                 segment.setTrip(trip);
-                
-                // Mapear e persistir meals
+
                 if (segmentDTO.getMeals() != null) {
                     List<Meal> meals = new ArrayList<>();
                     for (MealDTO mealDTO : segmentDTO.getMeals()) {
-                        Meal meal = mapper.map(mealDTO, Meal.class);
+                        Meal meal = new Meal();
+                        meal.setName(mealDTO.getName());
+                        meal.setMealType(mealDTO.getMealType());
+                        meal.setDescription(mealDTO.getDescription());
+                        meal.setRestaurantName(mealDTO.getRestaurantName());
+                        meal.setLocation(mealDTO.getRestaurantName());
+                        meal.setAddress(mealDTO.getAddress());
+                        meal.setLatitude(mealDTO.getLatitude());
+                        meal.setLongitude(mealDTO.getLongitude());
+                        meal.setStartTime(mealDTO.getStartTime());
+                        meal.setEndTime(mealDTO.getEndTime());
+                        meal.setDate(mealDTO.getDate());
+                        meal.setCost(mealDTO.getCost());
+                        meal.setNotes(mealDTO.getNotes());
                         meal.setSegment(segment);
                         meals.add(meal);
                     }
                     segment.setMeals(meals);
                 }
 
-                // Mapear e persistir activities
                 if (segmentDTO.getActivities() != null) {
                     List<Activity> activities = new ArrayList<>();
                     for (ActivityDTO activityDTO : segmentDTO.getActivities()) {
-                        Activity activity = mapper.map(activityDTO, Activity.class);
+                        Activity activity = new Activity();
+                        activity.setName(activityDTO.getName());
+                        activity.setActivityType(activityDTO.getActivityType());
+                        activity.setAddress(activityDTO.getAddress());
+                        activity.setLatitude(activityDTO.getLatitude());
+                        activity.setLongitude(activityDTO.getLongitude());
+                        activity.setStartTime(activityDTO.getStartTime());
+                        activity.setEndTime(activityDTO.getEndTime());
+                        activity.setDate(activityDTO.getDate());
+                        activity.setCost(activityDTO.getCost());
+                        activity.setNotes(activityDTO.getNotes());
                         activity.setSegment(segment);
                         activities.add(activity);
                     }
@@ -72,7 +103,29 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
         }
 
         List<TripUser> tripUsers = new ArrayList<>();
-        tripUsers.add(tripUser);
+        if (tripRequest.getUsers() != null && !tripRequest.getUsers().isEmpty()) {
+            for (TripUserDTO userDTO : tripRequest.getUsers()) {
+                if (userDTO == null || userDTO.getUserId() == null || userDTO.getPermissionLevel() == null) {
+                    continue;
+                }
+                User user = userRepository.findById(userDTO.getUserId());
+                if (user == null) {
+                    log.warn("Create trip failed: trip user not found, userId={}", userDTO.getUserId());
+                    throw new NotFoundException("User not found with id: " + userDTO.getUserId());
+                }
+                TripUser tripUser = tripService.addUserToTrip(user, trip, userDTO.getPermissionLevel().name());
+                tripUsers.add(tripUser);
+            }
+        }
+
+        boolean creatorIncluded = tripUsers.stream()
+                .map(TripUser::getUser)
+                .filter(Objects::nonNull)
+                .anyMatch(user -> creator.id.equals(user.id));
+        if (!creatorIncluded) {
+            tripUsers.add(tripService.createTripUser(creator, trip));
+        }
+
         trip.setUsers(tripUsers);
 
         tripRepository.persist(trip);

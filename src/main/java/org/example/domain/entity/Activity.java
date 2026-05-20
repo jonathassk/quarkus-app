@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 
 @Getter
@@ -28,8 +29,25 @@ public class Activity extends PanacheEntity {
     @Column(length = 255)
     private String address;
 
+    /** Latitude WGS84 (ex.: -23.5505) — integração com mapas */
+    @Column(name = "latitude")
+    private Double latitude;
+
+    /** Longitude WGS84 (ex.: -46.6333) — integração com mapas */
+    @Column(name = "longitude")
+    private Double longitude;
+
     @Column(precision = 10, scale = 2)
     private BigDecimal cost;
+
+    @Column(name = "start_time")
+    private Instant startTime;
+
+    @Column(name = "end_time")
+    private Instant endTime;
+
+    @Column(columnDefinition = "TEXT")
+    private String notes;
 
     @Column(length = 512)
     private String site;

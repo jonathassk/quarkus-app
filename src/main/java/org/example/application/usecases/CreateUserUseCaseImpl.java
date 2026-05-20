@@ -2,6 +2,7 @@ package org.example.application.usecases;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.user.request.UserCreateRequestDTO;
 import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.application.services.UserService;
@@ -11,6 +12,7 @@ import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.ModelMapperFactory;
 import org.modelmapper.ModelMapper;
 
+@Slf4j
 @Transactional
 @RequiredArgsConstructor
 public class CreateUserUseCaseImpl implements CreateUserUseCase {
@@ -33,19 +35,30 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
     @Override
     @Transactional
     public UserResponseDTO createUserEmail(UserCreateRequestDTO userRequest) {
-        userService.validatePassword(userRequest.getPassword());
-        userService.validateEmail(userRequest.getEmail());
-        if (userRepository.findByEmailOrUsername(userRequest.getEmail(), userRequest.getUsername()).isPresent())throw new IllegalArgumentException("Email or username already exists.");
-        String encryptedPassword = userService.encryptPassword(userRequest.getPassword());
-        ModelMapper mapper = ModelMapperFactory.createModelMapper();
-        User user = mapper.map(userRequest, User.class);
-        user.setPasswordHash(encryptedPassword);
-        userRepository.persist(user);
-        UserResponseDTO response = mapper.map(user, UserResponseDTO.class);
-        response.setToken(userService.validateUser(user, userRequest.getPassword()));
-        response.setExpiresIn(18000L);
-        response.setId(user.id);
-        return response;
+        try {
+            userService.validatePassword(userRequest.getPassword());
+            userService.validateEmail(userRequest.getEmail());
+            if (userRepository.findByEmailOrUsername(userRequest.getEmail(), userRequest.getUsername()).isPresent()) {
+                log.warn("Create user failed: email or username already exists, email={}", userRequest.getEmail());
+                throw new IllegalArgumentException("Email or username already exists.");
+            }
+            String encryptedPassword = userService.encryptPassword(userRequest.getPassword());
+            ModelMapper mapper = ModelMapperFactory.createModelMapper();
+            User user = mapper.map(userRequest, User.class);
+            user.setPasswordHash(encryptedPassword);
+            userRepository.persist(user);
+            UserResponseDTO response = mapper.map(user, UserResponseDTO.class);
+            response.setToken(userService.validateUser(user, userRequest.getPassword()));
+            response.setExpiresIn(18000L);
+            response.setId(user.id);
+            return response;
+        } catch (IllegalArgumentException e) {
+            log.warn("Create user validation failed: email={}, reason={}", userRequest.getEmail(), e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Create user failed: email={}", userRequest.getEmail(), e);
+            throw e;
+        }
     }
 
     private UserResponseDTO mapperResponse(User user) {
