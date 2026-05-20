@@ -1,11 +1,12 @@
 package org.example.controller;
 
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.dto.user.request.SyncUserRequest;
 import org.example.domain.entity.User;
 import org.example.domain.repository.UserRepository;
@@ -21,11 +22,18 @@ import java.util.Optional;
 @Path("/api/v1/users")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
-@RequiredArgsConstructor
 public class CognitoController {
 
     private final UserRepository userRepository;
     private final String internalSecret;
+
+    @Inject
+    public CognitoController(
+            UserRepository userRepository,
+            @ConfigProperty(name = "internal.secret") String internalSecret) {
+        this.userRepository = userRepository;
+        this.internalSecret = internalSecret;
+    }
 
     /**
      * POST /api/v1/users/sync
@@ -57,7 +65,6 @@ public class CognitoController {
 
         Optional<User> existingBySub = userRepository.findByCognitoSub(req.getCognitoSub());
         if (existingBySub.isPresent()) {
-            log.info("POST /users/sync: user already synced, cognitoSub={}", req.getCognitoSub());
             return Response.status(Response.Status.CONFLICT).build();
         }
 
@@ -73,7 +80,6 @@ public class CognitoController {
                 user.setProfilePictureUrl(req.getPictureUrl());
             }
             user.setEmailVerified(true);
-            log.info("POST /users/sync: existing user migrated to Cognito, email={}", req.getEmail());
             return Response.ok().build();
         }
 
@@ -96,7 +102,6 @@ public class CognitoController {
                 .build();
 
         userRepository.CreateUser(newUser);
-        log.info("POST /users/sync: new user created, email={}, username={}", req.getEmail(), username);
         return Response.status(Response.Status.CREATED).build();
     }
 
