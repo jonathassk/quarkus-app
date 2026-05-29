@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.user.request.UserCreateRequestDTO;
 import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.application.services.UserService;
+import org.example.application.services.impl.UserSyncService;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.domain.entity.User;
 import org.example.domain.repository.UserRepository;
@@ -19,6 +20,7 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
 
     private final UserService userService;
     private final UserRepository userRepository;
+    private final UserSyncService userSyncService;
 
     @Override
     public void createUserFacebookAccount(String name, String email) {
@@ -27,9 +29,11 @@ public class CreateUserUseCaseImpl implements CreateUserUseCase {
 
     @Override
     public void createUserGoogleAccount(String name, String email) {
-        //TODO: lembrar de tornar o email verified
-        //TODO: password = null
-        //TODO: verificar se o usuario ja existe no nosso sistema
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email is required for Google account");
+        }
+        userSyncService.resolveOrCreateGoogleByEmail(email, name);
+        log.info("Google account ensured in users table for email={}", email.trim().toLowerCase());
     }
 
     @Override

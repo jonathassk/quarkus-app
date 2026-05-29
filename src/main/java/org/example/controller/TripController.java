@@ -3,6 +3,8 @@ package org.example.controller;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ForbiddenException;
@@ -14,12 +16,15 @@ import org.example.application.dto.trip.request.TripRequestDTO;
 import org.example.application.dto.trip.request.UserInlcudeRequestDTO;
 import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.services.TokenService;
+import org.example.application.services.TripCollaborationService;
+import org.example.domain.enums.UserPermissionLevel;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.domain.entity.Trip;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.TripMapper;
+import org.example.utils.RequestAuthHeaders;
 import org.example.utils.TripDataValidator;
 
 import java.util.List;
@@ -38,17 +43,24 @@ public class TripController {
     private final UserRepository userRepository;
     private final TripRepository tripRepository;
     private final TokenService tokenService;
+    private final TripCollaborationService tripCollaborationService;
 
     private static final String UNAUTHORIZED_MSG = "Invalid or expired token";
     private static final String AUTH_HEADER_MSG = "Missing or invalid Authorization header";
     private static final String FORBIDDEN_TRIP_MSG = "You do not have access to this trip";
 
-    private Optional<Long> resolveAuthenticatedUserId(String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+        String bearerLine =
+                RequestAuthHeaders.resolveBearerHeaderLine(
+                        headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
+                        headers != null
+                                ? headers.getHeaderString(RequestAuthHeaders.BAGGAGI_AUTHORIZATION)
+                                : null);
+        if (bearerLine == null) {
             return Optional.empty();
         }
         try {
-            String token = authorizationHeader.substring("Bearer ".length()).trim();
+            String token = bearerLine.substring("Bearer ".length()).trim();
             Long userId = Long.valueOf(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 log.warn("Auth failed: user not found for userId={}", userId);
@@ -62,19 +74,33 @@ public class TripController {
     }
 
     private Response unauthorizedResponse() {
-        return Response.status(Response.Status.UNAUTHORIZED).entity(UNAUTHORIZED_MSG).build();
+        return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(errorBody("INVALID_TOKEN", UNAUTHORIZED_MSG))
+                .build();
     }
 
     private Response missingAuthHeaderResponse() {
-        return Response.status(Response.Status.UNAUTHORIZED).entity(AUTH_HEADER_MSG).build();
+        return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(errorBody("MISSING_AUTH_HEADER", AUTH_HEADER_MSG))
+                .build();
     }
 
-    private Response ensureTripMember(Long tripId, String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+    private static java.util.Map<String, String> errorBody(String code, String message) {
+        return java.util.Map.of("code", code, "message", message != null ? message : "");
+    }
+
+    private Response ensureTripMember(Long tripId, HttpHeaders headers) {
+        String bearerLine =
+                headers != null
+                        ? RequestAuthHeaders.resolveBearerHeaderLine(
+                                headers.getHeaderString(HttpHeaders.AUTHORIZATION),
+                                headers.getHeaderString(RequestAuthHeaders.BAGGAGI_AUTHORIZATION))
+                        : null;
+        if (bearerLine == null) {
             log.warn("Trip access denied: tripId={}, reason=missing_auth_header", tripId);
             return missingAuthHeaderResponse();
         }
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(authorizationHeader);
+        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("Trip access denied: tripId={}, reason=invalid_token", tripId);
             return unauthorizedResponse();
@@ -93,10 +119,15 @@ public class TripController {
 
     @GET
     @Transactional(Transactional.TxType.REQUIRED)
-    public Response listTripsForCurrentUser(@HeaderParam("Authorization") String authorizationHeader) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(authorizationHeader);
+    public Response listTripsForCurrentUser(@Context HttpHeaders headers) {
+        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
-            if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            if (RequestAuthHeaders.resolveBearerHeaderLine(
+                            headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
+                            headers != null
+                                    ? headers.getHeaderString(RequestAuthHeaders.BAGGAGI_AUTHORIZATION)
+                                    : null)
+                    == null) {
                 log.warn("List trips rejected: missing auth header");
                 return missingAuthHeaderResponse();
             }
@@ -104,7 +135,7 @@ public class TripController {
             return unauthorizedResponse();
         }
         List<TripResponseDTO> trips = tripRepository.findAllByLinkedUserId(userIdOpt.get()).stream()
-                .map(TripMapper::mapToTripResponseDTO)
+                .map(t -> TripMapper.mapToTripResponseDTO(t, tripCollaborationService))
                 .collect(Collectors.toList());
         return Response.ok(trips).build();
     }
@@ -112,13 +143,21 @@ public class TripController {
     @POST
     @Transactional
     @Path("/create-trip")
-    public Response createTrip(@Valid TripRequestDTO tripRequest) {
+    public Response createTrip(
+            @Valid TripRequestDTO tripRequest,
+            @Context HttpHeaders headers) {
         try {
-            TripDataValidator.validateTripRequest(tripRequest);
-            if (userRepository.findById(tripRequest.getCreatedBy()) == null) {
-                log.warn("Create trip rejected: creator not found, createdBy={}", tripRequest.getCreatedBy());
-                return Response.status(Response.Status.BAD_REQUEST).entity("User not found").build();
+            // Resolve the authenticated user from the Neon Auth JWT (JIT sync if needed).
+            // Overrides any createdBy sent in the body.
+            Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+            if (userIdOpt.isEmpty()) {
+                log.warn("Create trip rejected: unauthorized (name={})", tripRequest.getName());
+                return unauthorizedResponse();
             }
+
+            tripRequest.setCreatedBy(userIdOpt.get());
+
+            TripDataValidator.validateTripRequest(tripRequest);
             Trip result = createTripUseCase.createTrip(tripRequest);
             return Response.status(Response.Status.CREATED).entity(result.id).build();
         } catch (IllegalArgumentException e) {
@@ -128,7 +167,7 @@ public class TripController {
             log.warn("Create trip rejected: {}", e.getMessage());
             return Response.status(Response.Status.NOT_FOUND).entity(e.getMessage()).build();
         } catch (Exception e) {
-            log.error("Create trip failed: name={}, createdBy={}", tripRequest.getName(), tripRequest.getCreatedBy(), e);
+            log.error("Create trip failed: name={}", tripRequest.getName(), e);
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         }
     }
@@ -137,13 +176,13 @@ public class TripController {
     @Path("/{tripId}")
     @Transactional(Transactional.TxType.REQUIRED)
     public Response getTripById(@PathParam("tripId") Long tripId,
-                               @HeaderParam("Authorization") String authorizationHeader) {
-        Response denied = ensureTripMember(tripId, authorizationHeader);
+                               @Context HttpHeaders headers) {
+        Response denied = ensureTripMember(tripId, headers);
         if (denied != null) {
             return denied;
         }
         Trip trip = tripRepository.findById(tripId);
-        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(trip);
+        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(trip, tripCollaborationService);
         return Response.ok(tripResponse).build();
     }
 
@@ -152,15 +191,16 @@ public class TripController {
     @Path("/{tripId}/update-trip")
     public Response updateTrip(@PathParam("tripId") Long tripId,
                               @Valid TripRequestDTO tripRequest,
-                              @HeaderParam("Authorization") String authorizationHeader) {
-        Response denied = ensureTripMember(tripId, authorizationHeader);
+                              @Context HttpHeaders headers) {
+        Response denied = ensureTripEditor(tripId, headers);
         if (denied != null) {
             return denied;
         }
         try {
             TripDataValidator.validateTripRequest(tripRequest);
             Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
-            TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
+            TripResponseDTO tripResponse =
+                    TripMapper.mapToTripResponseDTO(updatedTrip, tripCollaborationService);
             return Response.ok(tripResponse).build();
         } catch (NotFoundException e) {
             log.warn("Update trip rejected: tripId={}, reason={}", tripId, e.getMessage());
@@ -181,8 +221,8 @@ public class TripController {
     @Path("/{tripId}/update-name-description")
     public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId,
                                                   @Valid NameDescriptionTravelRequestDto request,
-                                                  @HeaderParam("Authorization") String authorizationHeader) {
-        Response denied = ensureTripMember(tripId, authorizationHeader);
+                                                  @Context HttpHeaders headers) {
+        Response denied = ensureTripEditor(tripId, headers);
         if (denied != null) {
             return denied;
         }
@@ -195,7 +235,8 @@ public class TripController {
                         .build();
             }
             Trip updatedTrip = updateTripUseCase.updateNameAndDescription(tripId, request);
-            TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(updatedTrip);
+            TripResponseDTO tripResponse =
+                    TripMapper.mapToTripResponseDTO(updatedTrip, tripCollaborationService);
             return Response.ok(tripResponse).build();
         } catch (NotFoundException e) {
             log.warn("Update trip name/description rejected: tripId={}, reason={}", tripId, e.getMessage());
@@ -213,8 +254,8 @@ public class TripController {
     @Transactional
     public Response updateUsersTrip(@PathParam("tripId") Long tripId,
                                    @Valid List<UserInlcudeRequestDTO> request,
-                                   @HeaderParam("Authorization") String authorizationHeader) {
-        Response denied = ensureTripMember(tripId, authorizationHeader);
+                                   @Context HttpHeaders headers) {
+        Response denied = ensureTripManager(tripId, headers);
         if (denied != null) {
             return denied;
         }
@@ -244,10 +285,15 @@ public class TripController {
     @Path("/{tripId}")
     @Transactional
     public Response deleteTrip(@PathParam("tripId") Long tripId,
-                            @HeaderParam("Authorization") String authorizationHeader) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(authorizationHeader);
+                            @Context HttpHeaders headers) {
+        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
-            if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            if (RequestAuthHeaders.resolveBearerHeaderLine(
+                            headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
+                            headers != null
+                                    ? headers.getHeaderString(RequestAuthHeaders.BAGGAGI_AUTHORIZATION)
+                                    : null)
+                    == null) {
                 log.warn("Delete trip rejected: tripId={}, reason=missing_auth_header", tripId);
                 return missingAuthHeaderResponse();
             }
@@ -269,6 +315,46 @@ public class TripController {
                     .entity("An error occurred while deleting the trip: " + e.getMessage())
                     .build();
         }
+    }
+
+    private Response ensureTripEditor(Long tripId, HttpHeaders headers) {
+        Response base = ensureTripMember(tripId, headers);
+        if (base != null) {
+            return base;
+        }
+        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Trip trip = tripRepository.findById(tripId);
+        if (userIdOpt.isEmpty() || trip == null) {
+            return unauthorizedResponse();
+        }
+        UserPermissionLevel level = tripCollaborationService.resolvePermission(trip, userIdOpt.get());
+        if (level == null || !level.canEdit()) {
+            log.warn("Trip edit denied: tripId={}, userId={}", tripId, userIdOpt.get());
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("You do not have permission to edit this trip")
+                    .build();
+        }
+        return null;
+    }
+
+    private Response ensureTripManager(Long tripId, HttpHeaders headers) {
+        Response base = ensureTripMember(tripId, headers);
+        if (base != null) {
+            return base;
+        }
+        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Trip trip = tripRepository.findById(tripId);
+        if (userIdOpt.isEmpty() || trip == null) {
+            return unauthorizedResponse();
+        }
+        UserPermissionLevel level = tripCollaborationService.resolvePermission(trip, userIdOpt.get());
+        if (level == null || !level.canManageUsers()) {
+            log.warn("Trip share denied: tripId={}, userId={}", tripId, userIdOpt.get());
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("Only the trip owner can manage collaborators")
+                    .build();
+        }
+        return null;
     }
 
     @GET

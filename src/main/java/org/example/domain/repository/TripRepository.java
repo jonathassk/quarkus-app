@@ -10,6 +10,7 @@ import org.example.domain.entity.User;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class TripRepository implements PanacheRepository<Trip> {
@@ -85,5 +86,42 @@ public class TripRepository implements PanacheRepository<Trip> {
     @Transactional
     public Trip updateTrip(Trip trip) {
         return getEntityManager().merge(trip);
+    }
+
+    public Optional<TripUser> findTripUser(Long tripId, Long userId) {
+        return getEntityManager()
+                .createQuery(
+                        "SELECT tu FROM TripUser tu WHERE tu.trip.id = :tid AND tu.user.id = :uid",
+                        TripUser.class)
+                .setParameter("tid", tripId)
+                .setParameter("uid", userId)
+                .getResultStream()
+                .findFirst();
+    }
+
+    @Transactional
+    public TripUser addTripMember(Trip trip, User user, String permissionLevel) {
+        TripUser tripUser =
+                TripUser.builder().trip(trip).user(user).permissionLevel(permissionLevel).build();
+        getEntityManager().persist(tripUser);
+        if (trip.getUsers() == null) {
+            trip.setUsers(new java.util.ArrayList<>());
+        }
+        trip.getUsers().add(tripUser);
+        return tripUser;
+    }
+
+    @Transactional
+    public boolean removeTripMember(Trip trip, Long userId) {
+        Optional<TripUser> tripUser = findTripUser(trip.id, userId);
+        if (tripUser.isEmpty()) {
+            return false;
+        }
+        TripUser tu = tripUser.get();
+        if (trip.getUsers() != null) {
+            trip.getUsers().remove(tu);
+        }
+        getEntityManager().remove(tu);
+        return true;
     }
 }

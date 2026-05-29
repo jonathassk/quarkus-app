@@ -27,4 +27,5 @@ public class TripResponseDTO {
     private String visibility;
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;
+    private Long createdBy;
 }

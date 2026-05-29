@@ -11,10 +11,10 @@ class GreetingResourceTest {
     @Test
     void testHelloEndpoint() {
         given()
-          .when().get("/hello")
+          .when().get("/api/v1/auth/neon-status")
           .then()
              .statusCode(200)
-             .body(is("Hello from Quarkus REST"));
+             .body("neonVerifierConfigured", is(true));
     }
 
 }

@@ -10,5 +10,7 @@ import org.example.domain.enums.UserPermissionLevel;
 @AllArgsConstructor
 public class TripUserDTO {
     private Long userId;
+    private String email;
+    private String fullName;
     private UserPermissionLevel permissionLevel;
 }

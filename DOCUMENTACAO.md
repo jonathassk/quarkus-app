@@ -1,5 +1,8 @@
 # Documentação do Projeto Quarkus App
 
+> **Arquitetura de ponta a ponta (DNS, AWS, Neon Auth, frontend, Neon):** veja **[ARQUITETURA.md](ARQUITETURA.md)**.  
+> **Deploy e erros em produção:** veja **[DEPLOY.md](DEPLOY.md)**.
+
 ## Visão Geral
 
 Este projeto é uma aplicação backend desenvolvida com **Quarkus** (Java), focada em gerenciamento de viagens, usuários e permissões. Utiliza arquitetura limpa, separando domínio, aplicação, infraestrutura e interfaces REST, além de boas práticas de injeção de dependências, DTOs, mapeamento, criptografia e transações.

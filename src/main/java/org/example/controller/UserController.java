@@ -3,18 +3,30 @@ package org.example.controller;
 import io.quarkus.security.UnauthorizedException;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.user.request.UserCreateRequestDTO;
 import org.example.application.dto.user.request.UserLoginRequestDTO;
+import org.example.application.dto.user.request.UserProfileUpdateRequestDTO;
 import org.example.application.dto.user.response.UserResponseDTO;
+import org.example.application.dto.user.response.UserProfileDTO;
+import org.example.application.dto.user.response.UserSearchResultDTO;
+import org.example.application.services.TokenService;
+import org.example.domain.entity.User;
+import org.example.domain.repository.UserRepository;
 import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
+import org.example.utils.RequestAuthHeaders;
 import org.example.utils.UserDataVerification;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Path("/api/v1/users")
@@ -29,6 +41,8 @@ public class UserController {
     private final UserDataVerification userDataVerification;
     private final CreateUserUseCase createUserUseCase;
     private final LoginUserUseCase loginUserUseCase;
+    private final UserRepository userRepository;
+    private final TokenService tokenService;
 
     @POST
     @Transactional
@@ -138,6 +152,135 @@ public class UserController {
             current = current.getCause();
         }
         return false;
+    }
+
+    /**
+     * Search registered users to invite to a trip (min 2 characters).
+     */
+    @GET
+    @Path("/search")
+    public Response searchUsers(
+            @QueryParam("q") String query,
+            @Context HttpHeaders headers) {
+        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        if (actorId.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Invalid or expired token")
+                    .build();
+        }
+        if (query == null || query.trim().length() < 2) {
+            return Response.ok(List.of()).build();
+        }
+        List<UserSearchResultDTO> results =
+                userRepository.searchForInvite(query, actorId.get(), 20).stream()
+                        .map(this::toSearchResult)
+                        .collect(Collectors.toList());
+        if (results.isEmpty()) {
+            log.warn("User search returned no results q={} actorId={}", query.trim(), actorId.get());
+        }
+        return Response.ok(results).build();
+    }
+
+    private UserSearchResultDTO toSearchResult(User user) {
+        return UserSearchResultDTO.builder()
+                .id(user.id)
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .username(user.getUsername())
+                .build();
+    }
+
+    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+        String bearerLine =
+                headers != null
+                        ? RequestAuthHeaders.resolveBearerHeaderLine(
+                                headers.getHeaderString(HttpHeaders.AUTHORIZATION),
+                                headers.getHeaderString(RequestAuthHeaders.BAGGAGI_AUTHORIZATION))
+                        : null;
+        if (bearerLine == null) {
+            return Optional.empty();
+        }
+        try {
+            String token = bearerLine.substring("Bearer ".length()).trim();
+            Long userId = Long.valueOf(tokenService.validateToken(token));
+            if (userRepository.findById(userId) == null) {
+                return Optional.empty();
+            }
+            return Optional.of(userId);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    @GET
+    @Path("/auth/profile")
+    public Response getProfile(@Context HttpHeaders headers) {
+        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        if (actorId.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Invalid or expired token")
+                    .build();
+        }
+        User user = userRepository.findById(actorId.get());
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("User not found")
+                    .build();
+        }
+        UserProfileDTO profile = UserProfileDTO.builder()
+                .id(user.id)
+                .email(user.getEmail())
+                .username(user.getUsername())
+                .fullName(user.getFullName())
+                .avatar(user.getProfilePictureUrl())
+                .preferredLanguage(user.getPreferredLanguage())
+                .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
+                .build();
+        return Response.ok(profile).build();
+    }
+
+    @PATCH
+    @Path("/auth/profile")
+    @Transactional
+    public Response updateProfile(
+            UserProfileUpdateRequestDTO dto,
+            @Context HttpHeaders headers) {
+        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        if (actorId.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Invalid or expired token")
+                    .build();
+        }
+        User user = userRepository.findById(actorId.get());
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("User not found")
+                    .build();
+        }
+
+        if (dto.getFullName() != null) {
+            user.setFullName(dto.getFullName());
+        }
+
+        String newLang = dto.getLanguage() != null ? dto.getLanguage() : dto.getPreferredLanguage();
+        if (newLang != null) {
+            user.setPreferredLanguage(newLang);
+        }
+
+        userRepository.persist(user);
+
+        UserProfileDTO profile = UserProfileDTO.builder()
+                .id(user.id)
+                .email(user.getEmail())
+                .username(user.getUsername())
+                .fullName(user.getFullName())
+                .avatar(user.getProfilePictureUrl())
+                .preferredLanguage(user.getPreferredLanguage())
+                .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
+                .build();
+        return Response.ok(profile).build();
     }
 
     @GET

@@ -1,8 +1,19 @@
-# quarkus-app
+# quarkus-app — Backend Baggagi
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+API de planejamento de viagens (Quarkus 3 + PostgreSQL/Neon), deployada em **AWS Lambda** atrás de `https://api.baggagi.com`.
 
-If you want to learn more about Quarkus, please visit its website: https://quarkus.io/ .
+## Documentação
+
+| Documento | Descrição |
+|-----------|-----------|
+| **[ARQUITETURA.md](ARQUITETURA.md)** | Arquitetura completa: DNS, Cloudflare, frontend Vercel, Neon Auth, Lambdas, Neon, API |
+| **[DEPLOY.md](DEPLOY.md)** | Deploy SAM, variáveis de ambiente, troubleshooting |
+| **[DOCUMENTACAO.md](DOCUMENTACAO.md)** | Código, DTOs, endpoints, desenvolvimento local |
+| **[EXEMPLO_USO.md](EXEMPLO_USO.md)** | Exemplo de payload de viagem |
+
+---
+
+This project uses [Quarkus](https://quarkus.io/).
 
 ## Running the application in dev mode
 

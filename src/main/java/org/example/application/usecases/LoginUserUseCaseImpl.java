@@ -52,7 +52,8 @@ public class LoginUserUseCaseImpl implements LoginUserUseCase {
 
     @Override
     public void LoginUserGoogle() {
-
+        // Login Google é feito no Neon Auth; o front chama POST /api/v1/auth/session-sync com o JWT.
+        log.debug("LoginUserGoogle: use Neon Auth + POST /api/v1/auth/session-sync");
     }
 
     @Override

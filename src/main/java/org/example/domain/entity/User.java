@@ -30,8 +30,9 @@ public class User extends PanacheEntity {
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
-    @Column(name = "cognito_sub", unique = true, length = 128)
-    private String cognitoSub;
+    /** UUID do usuário no Neon Auth ({@code sub} / {@code id} do JWT). */
+    @Column(name = "auth_user_id", unique = true, length = 128)
+    private String authUserId;
 
     @Column(length = 255)
     private String city;

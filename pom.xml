@@ -47,6 +47,10 @@
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy-multipart</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit5</artifactId>
             <scope>test</scope>
         </dependency>
@@ -70,6 +74,10 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-orm-panache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -97,6 +105,21 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-amazon-lambda-http</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.29.45</version>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.47</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.crypto.tink</groupId>
+            <artifactId>tink</artifactId>
+            <version>1.7.0</version>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
@@ -182,11 +205,11 @@
                                          failOnNoReplacements="false"/>
                                 <replace file="${project.build.directory}/sam.jvm.yaml"
                                          token="  Globals:&#10;    Api:"
-                                         value="  Globals:&#10;    HttpApi:&#10;      CorsConfiguration:&#10;        AllowOrigins:&#10;          - http://localhost:3000&#10;          - https://baggagi.com&#10;          - https://www.baggagi.com&#10;          - https://baqqaqi.com&#10;          - https://www.baqqaqi.com&#10;        AllowMethods:&#10;          - GET&#10;          - POST&#10;          - PUT&#10;          - PATCH&#10;          - DELETE&#10;          - OPTIONS&#10;        AllowHeaders:&#10;          - Authorization&#10;          - Content-Type&#10;          - Origin&#10;          - X-Requested-With&#10;        MaxAge: 86400&#10;    Api:"
+                                         value="  Globals:&#10;    HttpApi:&#10;      CorsConfiguration:&#10;        AllowOrigins:&#10;          - http://localhost:3000&#10;          - https://baggagi.com&#10;          - https://www.baggagi.com&#10;          - https://baqqaqi.com&#10;          - https://www.baqqaqi.com&#10;        AllowMethods:&#10;          - GET&#10;          - POST&#10;          - PUT&#10;          - PATCH&#10;          - DELETE&#10;          - OPTIONS&#10;        AllowHeaders:&#10;          - Authorization&#10;          - Content-Type&#10;          - Origin&#10;          - X-Requested-With&#10;          - X-Baggagi-Authorization&#10;        MaxAge: 86400&#10;    Api:"
                                          failOnNoReplacements="false"/>
                                 <replace file="${project.build.directory}/sam.jvm.yaml"
                                          token="        MemorySize: 512&#10;        Policies: AWSLambdaBasicExecutionRole&#10;        Timeout: 15&#10;        Events:"
-                                         value="        MemorySize: 1024&#10;        Policies: AWSLambdaBasicExecutionRole&#10;        Environment:&#10;          Variables:&#10;            QUARKUS_PROFILE: lambda&#10;            QUARKUS_DATASOURCE_PASSWORD: !Ref DbPassword&#10;            QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000,https://baggagi.com,https://www.baggagi.com,https://baqqaqi.com,https://www.baqqaqi.com&#10;            JAVA_TOOL_OPTIONS: -Djava.net.preferIPv4Stack=true&#10;        Timeout: 30&#10;        AutoPublishAlias: live&#10;        SnapStart:&#10;          ApplyOn: PublishedVersions&#10;        Events:"
+                                         value="        MemorySize: 1024&#10;        Policies: AWSLambdaBasicExecutionRole&#10;        Environment:&#10;          Variables:&#10;            QUARKUS_PROFILE: lambda&#10;            QUARKUS_DATASOURCE_PASSWORD: !Ref DbPassword&#10;            QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000,https://baggagi.com,https://www.baggagi.com,https://baqqaqi.com,https://www.baqqaqi.com&#10;            NEON_AUTH_BASE_URL: https://ep-steep-night-ai1jrfuk.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth&#10;            JAVA_TOOL_OPTIONS: -Djava.net.preferIPv4Stack=true&#10;        Timeout: 30&#10;        AutoPublishAlias: live&#10;        SnapStart:&#10;          ApplyOn: PublishedVersions&#10;        Events:"
                                          failOnNoReplacements="false"/>
                                 <replace file="${project.build.directory}/sam.jvm.yaml"
                                          token="        Events:&#10;          HttpApiEvent:&#10;            Type: HttpApi&#10;"

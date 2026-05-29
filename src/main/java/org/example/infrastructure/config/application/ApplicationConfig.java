@@ -2,7 +2,6 @@ package org.example.infrastructure.config.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripService;
 import org.example.application.services.UserService;
@@ -17,17 +16,18 @@ import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.controller.AuthController;
-import org.example.controller.CognitoController;
 import org.example.controller.TripController;
+import org.example.controller.TripChecklistController;
+import org.example.controller.TripDocumentController;
 import org.example.controller.UserController;
+import org.example.application.services.AuthSessionService;
+import org.example.application.services.impl.UserSyncService;
+import org.example.infrastructure.auth.NeonAuthJwtVerifier;
+import org.example.infrastructure.storage.ObjectStorageService;
 import org.example.domain.repository.*;
 import org.example.utils.UserDataVerification;
-
 @ApplicationScoped
 public class ApplicationConfig {
-
-    @ConfigProperty(name = "internal.secret", defaultValue = "baggagi-internal-dev")
-    String internalSecret;
 
     @Produces
     @ApplicationScoped
@@ -63,6 +63,16 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
+    public TripDocumentRepository tripDocumentRepository() { return new TripDocumentRepository(); }
+
+    @Produces
+    @ApplicationScoped
+    public TripChecklistItemRepository tripChecklistItemRepository() {
+        return new TripChecklistItemRepository();
+    }
+
+    @Produces
+    @ApplicationScoped
     public TripService tripService(TripSegmentRepository tripSegmentRepository) {
         return new TripServiceImpl(tripSegmentRepository);
     }
@@ -77,8 +87,9 @@ public class ApplicationConfig {
     @ApplicationScoped
     public CreateUserUseCase createUserUseCase(
             UserService userService,
-            UserRepository userRepository) {
-        return new CreateUserUseCaseImpl(userService, userRepository);
+            UserRepository userRepository,
+            UserSyncService userSyncService) {
+        return new CreateUserUseCaseImpl(userService, userRepository, userSyncService);
     }
 
     @Produces
@@ -117,8 +128,15 @@ public class ApplicationConfig {
             UpdateTripUseCase updateTripUseCase,
             UserRepository userRepository,
             TripRepository tripRepository,
-            TokenService tokenService) {
-        return new TripController(createTripUseCase, updateTripUseCase, userRepository, tripRepository, tokenService);
+            TokenService tokenService,
+            org.example.application.services.TripCollaborationService tripCollaborationService) {
+        return new TripController(
+                createTripUseCase,
+                updateTripUseCase,
+                userRepository,
+                tripRepository,
+                tokenService,
+                tripCollaborationService);
     }
 
     @Produces
@@ -126,21 +144,48 @@ public class ApplicationConfig {
     public UserController userController(
             UserDataVerification userDataVerification,
             CreateUserUseCase createUserUseCase,
-            LoginUserUseCase loginUserUseCase) {
-        return new UserController(userDataVerification, createUserUseCase, loginUserUseCase);
+            LoginUserUseCase loginUserUseCase,
+            UserRepository userRepository,
+            TokenService tokenService) {
+        return new UserController(
+                userDataVerification, createUserUseCase, loginUserUseCase, userRepository, tokenService);
     }
 
     @Produces
     @ApplicationScoped
     public AuthController authController(
             TokenService tokenService,
-            UserRepository userRepository) {
-        return new AuthController(tokenService, userRepository);
+            UserRepository userRepository,
+            AuthSessionService authSessionService,
+            NeonAuthJwtVerifier neonAuthJwtVerifier) {
+        return new AuthController(
+                tokenService, userRepository, authSessionService, neonAuthJwtVerifier);
     }
 
     @Produces
     @ApplicationScoped
-    public CognitoController cognitoController(UserRepository userRepository) {
-        return new CognitoController(userRepository, internalSecret);
+    public TripDocumentController tripDocumentController(
+            TripRepository tripRepository,
+            TripDocumentRepository tripDocumentRepository,
+            UserRepository userRepository,
+            TokenService tokenService,
+            ObjectStorageService objectStorageService) {
+        return new TripDocumentController(
+                tripRepository,
+                tripDocumentRepository,
+                userRepository,
+                tokenService,
+                objectStorageService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public TripChecklistController tripChecklistController(
+            TripRepository tripRepository,
+            TripChecklistItemRepository tripChecklistItemRepository,
+            UserRepository userRepository,
+            TokenService tokenService) {
+        return new TripChecklistController(
+                tripRepository, tripChecklistItemRepository, userRepository, tokenService);
     }
 } 

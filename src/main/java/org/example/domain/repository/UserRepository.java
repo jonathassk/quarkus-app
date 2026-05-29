@@ -3,12 +3,18 @@ package org.example.domain.repository;
 import io.quarkus.hibernate.orm.panache.PanacheRepository;
 import org.example.domain.entity.User;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 public class UserRepository implements PanacheRepository<User> {
 
     public Optional<User> findByEmail(String email) {
-        return find("email", email).firstResultOptional();
+        if (email == null || email.isBlank()) {
+            return Optional.empty();
+        }
+        return find("LOWER(email) = ?1", email.trim().toLowerCase(Locale.ROOT))
+                .firstResultOptional();
     }
 
     public Optional<User> findByProviderAndId(String provider, String providerId) {
@@ -27,12 +33,32 @@ public class UserRepository implements PanacheRepository<User> {
         return find("email = ?1 or username = ?1", email).firstResultOptional();
     }
 
-    public Optional<User> findByCognitoSub(String cognitoSub) {
-        return find("cognitoSub", cognitoSub).firstResultOptional();
+    public Optional<User> findByAuthUserId(String authUserId) {
+        return find("authUserId", authUserId).firstResultOptional();
     }
 
     public User CreateUser(User user) {
         persist(user);
         return user;
+    }
+
+    /**
+     * Search registered users by email, full name or username (for trip invites).
+     */
+    public List<User> searchForInvite(String query, Long excludeUserId, int maxResults) {
+        if (query == null || query.trim().length() < 2) {
+            return List.of();
+        }
+        String pattern = "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
+        return getEntityManager()
+                .createQuery(
+                        "SELECT u FROM User u WHERE u.id <> :exclude AND ("
+                                + "LOWER(u.email) LIKE :q OR LOWER(u.fullName) LIKE :q "
+                                + "OR LOWER(u.username) LIKE :q) ORDER BY u.fullName",
+                        User.class)
+                .setParameter("exclude", excludeUserId != null ? excludeUserId : -1L)
+                .setParameter("q", pattern)
+                .setMaxResults(maxResults)
+                .getResultList();
     }
 }
