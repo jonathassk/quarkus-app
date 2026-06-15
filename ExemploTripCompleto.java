@@ -40,6 +40,15 @@ public class ExemploTripCompleto {
                 .updatedAt(Instant.now())
                 .build();
 
+        // Criar Workspace
+        Workspace workspace = Workspace.builder()
+                .name("Workspace Pessoal de João Silva")
+                .planType("FREE")
+                .primaryColor("#000000")
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
         // Criar Trip
         Trip trip = Trip.builder()
                 .name("Viagem para Paris - Primavera 2024")
@@ -47,9 +56,12 @@ public class ExemploTripCompleto {
                 .budgetTotal(new BigDecimal("8500.00"))
                 .startDate(LocalDate.of(2024, 4, 15))
                 .endDate(LocalDate.of(2024, 4, 17))
+                .durationDays(3)
+                .targetMonth(4)
                 .coverImageUrl("https://example.com/images/paris-spring-2024.jpg")
                 .visibility("private")
                 .createdBy(joao)
+                .workspace(workspace)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
@@ -86,6 +98,8 @@ public class ExemploTripCompleto {
                 .cityId("paris-fr")
                 .arrivalDate(LocalDate.of(2024, 4, 15))
                 .departureDate(LocalDate.of(2024, 4, 15))
+                .startDay(1)
+                .endDay(1)
                 .notes("Primeiro dia em Paris - chegada e exploração inicial da cidade")
                 .trip(trip)
                 .build();
@@ -99,6 +113,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("17.00"))
                         .site("https://www.louvre.fr")
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -108,6 +123,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("15.00"))
                         .site("https://www.bateauxparisiens.com")
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -117,6 +133,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("26.10"))
                         .site("https://www.toureiffel.paris")
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -126,6 +143,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("13.00"))
                         .site("https://www.paris-arc-de-triomphe.fr")
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build()
         );
@@ -140,6 +158,7 @@ public class ExemploTripCompleto {
                         .address("Rue de Rivoli, 75004 Paris, França")
                         .cost(new BigDecimal("0.00"))
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build(),
                 Meal.builder()
@@ -150,6 +169,7 @@ public class ExemploTripCompleto {
                         .address("9 Carrefour de l'Odéon, 75006 Paris, França")
                         .cost(new BigDecimal("45.00"))
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build(),
                 Meal.builder()
@@ -160,6 +180,7 @@ public class ExemploTripCompleto {
                         .address("32 Rue du Vertbois, 75003 Paris, França")
                         .cost(new BigDecimal("85.00"))
                         .date(LocalDate.of(2024, 4, 15))
+                        .dayNumber(1)
                         .segment(segment)
                         .build()
         );
@@ -175,6 +196,8 @@ public class ExemploTripCompleto {
                 .cityId("paris-fr")
                 .arrivalDate(LocalDate.of(2024, 4, 16))
                 .departureDate(LocalDate.of(2024, 4, 16))
+                .startDay(2)
+                .endDay(2)
                 .notes("Segundo dia - foco em arte e gastronomia")
                 .trip(trip)
                 .build();
@@ -188,15 +211,17 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("16.00"))
                         .site("https://www.musee-orsay.fr")
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build(),
                 Activity.builder()
                         .name("Passeio pelo Jardim de Luxemburgo")
                         .activityType("LAZER")
-                        .address("Rue de Médicis, 75006 Paris, França")
+                        .address("Rue de Medicis, 75006 Paris, França")
                         .cost(new BigDecimal("0.00"))
                         .site("https://www.senat.fr/visite/jardin")
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -206,6 +231,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("0.00"))
                         .site("https://www.notredamedeparis.fr")
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -215,6 +241,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("0.00"))
                         .site("https://www.parisinfo.com/montmartre")
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build()
         );
@@ -229,6 +256,7 @@ public class ExemploTripCompleto {
                         .address("Rue de Rivoli, 75004 Paris, França")
                         .cost(new BigDecimal("0.00"))
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build(),
                 Meal.builder()
@@ -239,6 +267,7 @@ public class ExemploTripCompleto {
                         .address("5 Rue du Nil, 75002 Paris, França")
                         .cost(new BigDecimal("65.00"))
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build(),
                 Meal.builder()
@@ -249,6 +278,7 @@ public class ExemploTripCompleto {
                         .address("129 Avenue Parmentier, 75011 Paris, França")
                         .cost(new BigDecimal("95.00"))
                         .date(LocalDate.of(2024, 4, 16))
+                        .dayNumber(2)
                         .segment(segment)
                         .build()
         );
@@ -264,6 +294,8 @@ public class ExemploTripCompleto {
                 .cityId("paris-fr")
                 .arrivalDate(LocalDate.of(2024, 4, 17))
                 .departureDate(LocalDate.of(2024, 4, 17))
+                .startDay(3)
+                .endDay(3)
                 .notes("Último dia - compras e despedida de Paris")
                 .trip(trip)
                 .build();
@@ -277,6 +309,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("20.00"))
                         .site("https://en.chateauversailles.fr")
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -286,6 +319,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("0.00"))
                         .site("https://www.galerieslafayette.com")
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -295,6 +329,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("0.00"))
                         .site("https://www.parisinfo.com/champs-elysees")
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build(),
                 Activity.builder()
@@ -304,6 +339,7 @@ public class ExemploTripCompleto {
                         .cost(new BigDecimal("14.00"))
                         .site("https://www.centrepompidou.fr")
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build()
         );
@@ -318,6 +354,7 @@ public class ExemploTripCompleto {
                         .address("Rue de Rivoli, 75004 Paris, França")
                         .cost(new BigDecimal("0.00"))
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build(),
                 Meal.builder()
@@ -328,6 +365,7 @@ public class ExemploTripCompleto {
                         .address("80 Rue de Charonne, 75011 Paris, França")
                         .cost(new BigDecimal("55.00"))
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build(),
                 Meal.builder()
@@ -338,6 +376,7 @@ public class ExemploTripCompleto {
                         .address("Avenue Gustave Eiffel, 75007 Paris, França")
                         .cost(new BigDecimal("120.00"))
                         .date(LocalDate.of(2024, 4, 17))
+                        .dayNumber(3)
                         .segment(segment)
                         .build()
         );

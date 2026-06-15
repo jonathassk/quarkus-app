@@ -10,6 +10,7 @@ import lombok.Builder;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Getter
 @Setter
@@ -50,10 +51,14 @@ public class Meal extends PanacheEntity {
     private BigDecimal cost;
 
     @Column(name = "start_time")
-    private Instant startTime;
+    private LocalTime startTime;
 
     @Column(name = "end_time")
-    private Instant endTime;
+    private LocalTime endTime;
+
+    @Column(name = "day_number", nullable = false)
+    @Builder.Default
+    private int dayNumber = 1;
 
     @Column(columnDefinition = "TEXT")
     private String notes;

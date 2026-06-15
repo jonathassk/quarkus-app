@@ -19,8 +19,11 @@ public class TripRequestDTO {
     private BigDecimal budgetTotal;
     private LocalDate startDate;
     private LocalDate endDate;
+    private int durationDays;
+    private Integer targetMonth;
     private String coverImageUrl;
     private Long createdBy;
+    private Long workspaceId;
     private String visibility;
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;

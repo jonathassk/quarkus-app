@@ -36,8 +36,19 @@ public class Trip extends PanacheEntity {
     @Column(name = "end_date")
     private LocalDate endDate;
 
+    @Column(name = "duration_days")
+    @Builder.Default
+    private int durationDays = 1;
+
+    @Column(name = "target_month")
+    private Integer targetMonth;
+
     @Column(name = "cover_image_url", length = 512)
     private String coverImageUrl;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workspace_id", nullable = false)
+    private Workspace workspace;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)

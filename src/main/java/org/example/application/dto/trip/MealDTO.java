@@ -2,9 +2,11 @@ package org.example.application.dto.trip;
 
 import lombok.*;
 
+import jakarta.json.bind.annotation.JsonbDateFormat;
+import jakarta.json.bind.annotation.JsonbProperty;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Getter
 @Setter
@@ -21,9 +23,12 @@ public class MealDTO {
     private Double latitude;
     /** Longitude WGS84 para mapas */
     private Double longitude;
-    private Instant startTime;
-    private Instant endTime;
+    private LocalTime startTime;
+    private LocalTime endTime;
+    @JsonbProperty(nillable = true)
+    @JsonbDateFormat("yyyy-MM-dd")
     private LocalDate date;
+    private int dayNumber;
     private BigDecimal cost;
     private String notes;
 }

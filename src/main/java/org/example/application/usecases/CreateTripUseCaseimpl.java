@@ -41,6 +41,39 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
         }
         trip.setCreatedBy(creator);
 
+        Long workspaceId = tripRequest.getWorkspaceId();
+        Workspace workspace = null;
+        if (workspaceId != null) {
+            workspace = Workspace.findById(workspaceId);
+            if (workspace == null) {
+                log.warn("Create trip failed: workspace not found, workspaceId={}", workspaceId);
+                throw new NotFoundException("Workspace not found");
+            }
+        } else {
+            WorkspaceMember member = WorkspaceMember.find("user", creator).firstResult();
+            if (member != null) {
+                workspace = member.getWorkspace();
+            } else {
+                workspace = Workspace.builder()
+                        .name("Workspace Pessoal de " + (creator.getFullName() != null && !creator.getFullName().isBlank() ? creator.getFullName() : creator.getUsername()))
+                        .planType("FREE")
+                        .primaryColor("#000000")
+                        .build();
+                workspace.persist();
+
+                WorkspaceMember newMember = WorkspaceMember.builder()
+                        .workspace(workspace)
+                        .user(creator)
+                        .role(org.example.domain.enums.WorkspaceRole.OWNER)
+                        .build();
+                newMember.persist();
+                log.info("Created JIT personal workspace id={} for user id={}", workspace.id, creator.id);
+            }
+        }
+        trip.setWorkspace(workspace);
+        trip.setDurationDays(tripRequest.getDurationDays());
+        trip.setTargetMonth(tripRequest.getTargetMonth());
+
         if (tripRequest.getSegments() != null && !tripRequest.getSegments().isEmpty()) {
             List<TripSegment> segments = new ArrayList<>();
 
@@ -49,6 +82,8 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
                 segment.setCityId(segmentDTO.getCityId());
                 segment.setArrivalDate(segmentDTO.getArrivalDate());
                 segment.setDepartureDate(segmentDTO.getDepartureDate());
+                segment.setStartDay(segmentDTO.getStartDay());
+                segment.setEndDay(segmentDTO.getEndDay());
                 segment.setNotes(segmentDTO.getNotes());
                 segment.setDailyCost(segmentDTO.getDailyCost());
                 segment.setTrip(trip);
@@ -68,6 +103,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
                         meal.setStartTime(mealDTO.getStartTime());
                         meal.setEndTime(mealDTO.getEndTime());
                         meal.setDate(mealDTO.getDate());
+                        meal.setDayNumber(mealDTO.getDayNumber());
                         meal.setCost(mealDTO.getCost());
                         meal.setNotes(mealDTO.getNotes());
                         meal.setSegment(segment);
@@ -88,6 +124,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
                         activity.setStartTime(activityDTO.getStartTime());
                         activity.setEndTime(activityDTO.getEndTime());
                         activity.setDate(activityDTO.getDate());
+                        activity.setDayNumber(activityDTO.getDayNumber());
                         activity.setCost(activityDTO.getCost());
                         activity.setNotes(activityDTO.getNotes());
                         activity.setSegment(segment);

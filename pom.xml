@@ -215,6 +215,7 @@
                                          token="        Events:&#10;          HttpApiEvent:&#10;            Type: HttpApi&#10;"
                                          value="        Events:&#10;          HttpApiProxyRoot:&#10;            Type: HttpApi&#10;            Properties:&#10;              Path: /&#10;              Method: ANY&#10;          HttpApiProxy:&#10;            Type: HttpApi&#10;            Properties:&#10;              Path: /{proxy+}&#10;              Method: ANY&#10;"
                                          failOnNoReplacements="false"/>
+                                <copy file="samconfig.toml" tofile="${project.build.directory}/samconfig.toml" failonerror="false"/>
                             </target>
                         </configuration>
                     </execution>

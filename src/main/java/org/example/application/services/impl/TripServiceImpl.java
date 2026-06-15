@@ -75,9 +75,17 @@ public class TripServiceImpl implements TripService {
         if (dto.getCoverImageUrl() != null) trip.setCoverImageUrl(dto.getCoverImageUrl());
         if (dto.getName() != null) trip.setName(dto.getName());
         if (dto.getDescription() != null) trip.setDescription(dto.getDescription());
-        if (dto.getStartDate() != null) trip.setStartDate(dto.getStartDate());
-        if (dto.getEndDate() != null) trip.setEndDate(dto.getEndDate());
+        trip.setStartDate(dto.getStartDate());
+        trip.setEndDate(dto.getEndDate());
         if (dto.getBudgetTotal() != null) trip.setBudgetTotal(dto.getBudgetTotal());
+        if (dto.getDurationDays() > 0) trip.setDurationDays(dto.getDurationDays());
+        trip.setTargetMonth(dto.getTargetMonth());
+        if (dto.getWorkspaceId() != null) {
+            Workspace workspace = Workspace.findById(dto.getWorkspaceId());
+            if (workspace != null) {
+                trip.setWorkspace(workspace);
+            }
+        }
 
         trip.setUpdatedAt(Instant.now());
     }
@@ -103,6 +111,8 @@ public class TripServiceImpl implements TripService {
         segment.setCityId(segmentDTO.getCityId());
         segment.setArrivalDate(segmentDTO.getArrivalDate());
         segment.setDepartureDate(segmentDTO.getDepartureDate());
+        segment.setStartDay(segmentDTO.getStartDay());
+        segment.setEndDay(segmentDTO.getEndDay());
         segment.setNotes(segmentDTO.getNotes());
         segment.setDailyCost(segmentDTO.getDailyCost());
         segment.setTrip(trip);
@@ -134,6 +144,7 @@ public class TripServiceImpl implements TripService {
                     meal.setStartTime(mealDTO.getStartTime());
                     meal.setEndTime(mealDTO.getEndTime());
                     meal.setDate(mealDTO.getDate());
+                    meal.setDayNumber(mealDTO.getDayNumber());
                     meal.setCost(mealDTO.getCost());
                     meal.setNotes(mealDTO.getNotes());
                     meal.setSegment(segment);
@@ -155,6 +166,7 @@ public class TripServiceImpl implements TripService {
                     activity.setStartTime(activityDTO.getStartTime());
                     activity.setEndTime(activityDTO.getEndTime());
                     activity.setDate(activityDTO.getDate());
+                    activity.setDayNumber(activityDTO.getDayNumber());
                     activity.setNotes(activityDTO.getNotes());
                     activity.setSegment(segment);
                     return activity;

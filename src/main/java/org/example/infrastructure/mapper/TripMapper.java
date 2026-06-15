@@ -50,6 +50,9 @@ public class TripMapper {
         if (trip.getCreatedBy() != null) {
             dto.setCreatedBy(trip.getCreatedBy().id);
         }
+        if (trip.getWorkspace() != null) {
+            dto.setWorkspaceId(trip.getWorkspace().id);
+        }
         if (collaborationService != null) {
             dto.setUsers(collaborationService.buildCollaboratorList(trip));
         }

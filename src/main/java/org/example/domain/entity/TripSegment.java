@@ -25,6 +25,14 @@ public class TripSegment extends PanacheEntity {
     @Column(name = "departure_date")
     private LocalDate departureDate;
 
+    @Column(name = "start_day", nullable = false)
+    @Builder.Default
+    private int startDay = 1;
+
+    @Column(name = "end_day")
+    @Builder.Default
+    private int endDay = 1;
+
     @Column(columnDefinition = "TEXT")
     private String notes;
 

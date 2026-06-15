@@ -23,8 +23,11 @@ public class TripResponseDTO {
     private BigDecimal budgetTotal;
     private LocalDate startDate;
     private LocalDate endDate;
+    private int durationDays;
+    private Integer targetMonth;
     private String coverImageUrl;
     private String visibility;
+    private Long workspaceId;
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;
     private Long createdBy;
