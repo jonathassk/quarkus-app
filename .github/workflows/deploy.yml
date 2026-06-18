@@ -1,0 +1,43 @@
+name: Deploy Quarkus App to AWS Lambda
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run Lint and Compile
+        run: mvn compile
+
+      - name: Run Tests
+        run: mvn test
+
+      - name: Build Package
+        run: mvn package -DskipTests
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: sa-east-1
+
+      - name: Deploy to AWS Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name arn:aws:lambda:sa-east-1:252186483726:function:baggagi-back-QuarkusApp-bZQXfpq4Qxi8 \
+            --zip-file fileb://target/function.zip

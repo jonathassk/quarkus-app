@@ -17,6 +17,7 @@ import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.application.services.AuthSessionService;
 import org.example.application.services.MagicLinkService;
 import org.example.application.services.TokenService;
+import org.example.infrastructure.auth.NeonAuthJwtVerifier;
 import org.example.domain.entity.User;
 import org.example.domain.repository.UserRepository;
 import org.example.utils.AuthTokenException;
@@ -36,6 +37,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final AuthSessionService authSessionService;
     private final MagicLinkService magicLinkService;
+    private final NeonAuthJwtVerifier neonAuthJwtVerifier;
 
     /**
      * Sincroniza usuário Neon Auth (Google OAuth, e-mail, etc.) com a tabela {@code users}.
@@ -239,6 +241,20 @@ public class AuthController {
                     .entity(errorBody("INTERNAL_ERROR", "Erro interno"))
                     .build();
         }
+    }
+
+    @GET
+    @Path("/neon-status")
+    @Operation(
+        summary = "Verificar status de configuração do Neon Auth",
+        description = "Retorna se o validador Neon Auth está configurado corretamente."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Retorna se o verificador está ativo")
+    })
+    public Response getNeonStatus() {
+        boolean configured = neonAuthJwtVerifier.isConfigured();
+        return Response.ok(Map.of("neonVerifierConfigured", configured)).build();
     }
 
     // -------------------------------------------------------------------------

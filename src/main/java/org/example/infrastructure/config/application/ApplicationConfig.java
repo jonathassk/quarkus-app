@@ -27,6 +27,7 @@ import org.example.application.services.AuthSessionService;
 import org.example.application.services.impl.UserSyncService;
 import org.example.application.services.TripCollaborationService;
 import org.example.infrastructure.storage.ObjectStorageService;
+import org.example.infrastructure.auth.NeonAuthJwtVerifier;
 import org.example.domain.repository.*;
 import org.example.utils.UserDataVerification;
 @ApplicationScoped
@@ -166,9 +167,10 @@ public class ApplicationConfig {
             TokenService tokenService,
             UserRepository userRepository,
             AuthSessionService authSessionService,
-            MagicLinkService magicLinkService) {
+            MagicLinkService magicLinkService,
+            NeonAuthJwtVerifier neonAuthJwtVerifier) {
         return new AuthController(
-                tokenService, userRepository, authSessionService, magicLinkService);
+                tokenService, userRepository, authSessionService, magicLinkService, neonAuthJwtVerifier);
     }
 
     @Produces
