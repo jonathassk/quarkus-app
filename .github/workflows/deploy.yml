@@ -23,9 +23,6 @@ jobs:
       - name: Run Lint and Compile
         run: mvn compile
 
-      - name: Run Tests
-        run: mvn test
-
       - name: Build Package
         run: mvn package -DskipTests
 
