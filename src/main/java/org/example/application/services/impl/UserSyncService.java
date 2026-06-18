@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.example.domain.entity.User;
+import org.example.domain.enums.UserType;
 import org.example.domain.repository.UserRepository;
 
 import java.util.Optional;
@@ -111,6 +112,7 @@ public class UserSyncService {
                         .emailVerified(normalizedEmail != null || oauthProvider)
                         .accountStatus("active")
                         .role("USER")
+                        .userType(UserType.FREE)
                         .build();
 
         userRepository.CreateUser(newUser);

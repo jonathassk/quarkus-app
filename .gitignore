@@ -54,3 +54,8 @@ function.zip
 
 # Plugin directory
 /.quarkus/cli/plugins/
+
+# Arquivos de teste EdDSA compilados na raiz (não devem ser versionados)
+TestEdDSA*.class
+TestEdDSA*.java
+*.class

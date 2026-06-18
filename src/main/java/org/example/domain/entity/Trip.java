@@ -4,6 +4,7 @@ import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.enums.TripStatus;
+import org.example.domain.entity.Agency;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -66,6 +67,18 @@ public class Trip extends PanacheEntity {
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TripUser> users;
+
+    /**
+     * Agência que criou esta viagem.
+     * <ul>
+     *   <li>{@code null} – viagem pessoal B2C (FREE ou PREMIUM).</li>
+     *   <li>non-null    – viagem B2B criada por uma agência; o isolamento multitenant
+     *                    é garantido filtrando por este campo em todas as queries da agência.</li>
+     * </ul>
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agency_id")
+    private Agency agency;
 
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

@@ -17,10 +17,16 @@ import org.example.application.dto.trip.request.UserInlcudeRequestDTO;
 import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripCollaborationService;
+import org.example.domain.entity.Agency;
+import org.example.domain.entity.AgencyMember;
+import org.example.domain.enums.AgencyRole;
 import org.example.domain.enums.UserPermissionLevel;
+import org.example.domain.enums.UserType;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.domain.entity.Trip;
+import org.example.domain.entity.User;
+import org.example.domain.repository.AgencyMemberRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.TripMapper;
@@ -44,6 +50,7 @@ public class TripController {
     private final TripRepository tripRepository;
     private final TokenService tokenService;
     private final TripCollaborationService tripCollaborationService;
+    private final AgencyMemberRepository agencyMemberRepository;
 
     private static final String UNAUTHORIZED_MSG = "Invalid or expired token";
     private static final String AUTH_HEADER_MSG = "Missing or invalid Authorization header";
@@ -89,6 +96,18 @@ public class TripController {
         return java.util.Map.of("code", code, "message", message != null ? message : "");
     }
 
+    /**
+     * Verifica se o usuário tem acesso à viagem.
+     *
+     * <p><strong>Lógica de bypass B2B:</strong> Se a viagem pertence a uma agência
+     * ({@code trip.agency != null}), a verificação de assinatura B2C é ignorada.
+     * Em vez disso:
+     * <ul>
+     *   <li>Usuário GUEST: acesso liberado se seu e-mail estiver vinculado à viagem.</li>
+     *   <li>Membro da agência (AGENCY_OWNER/CONSULTANT): acesso liberado por pertencimento.</li>
+     * </ul>
+     * Viagens B2C ({@code trip.agency == null}) seguem o fluxo normal.
+     */
     private Response ensureTripMember(Long tripId, HttpHeaders headers) {
         String bearerLine =
                 headers != null
@@ -110,8 +129,61 @@ public class TripController {
             log.warn("Trip access denied: tripId={}, reason=trip_not_found", tripId);
             return Response.status(Response.Status.NOT_FOUND).entity("Trip not found").build();
         }
-        if (!tripRepository.isUserLinkedToTrip(tripId, userIdOpt.get())) {
-            log.warn("Trip access denied: tripId={}, userId={}, reason=not_member", tripId, userIdOpt.get());
+
+        Long userId = userIdOpt.get();
+
+        // -------------------------------------------------------------------
+        // Bypass B2B: viagem pertence a uma agência
+        // -------------------------------------------------------------------
+        if (trip.getAgency() != null) {
+            Agency agency = trip.getAgency();
+
+            User user = userRepository.findById(userId);
+            if (user == null) {
+                return unauthorizedResponse();
+            }
+
+            // Caso 1: GUEST — verifica se o e-mail está vinculado à viagem
+            if (UserType.GUEST == user.getUserType()) {
+                boolean guestLinked = trip.getUsers() != null && trip.getUsers().stream()
+                        .anyMatch(tu -> tu.getUser() != null
+                                && user.getEmail().equalsIgnoreCase(tu.getUser().getEmail()));
+                if (guestLinked) {
+                    log.debug("Agency B2B bypass granted: GUEST userId={} tripId={}", userId, tripId);
+                    return null; // acesso liberado
+                }
+                log.warn("Trip access denied: GUEST userId={} not linked to tripId={}", userId, tripId);
+                return Response.status(Response.Status.FORBIDDEN).entity(FORBIDDEN_TRIP_MSG).build();
+            }
+
+            // Caso 2: Membro da agência — AGENCY_OWNER vê todas; CONSULTANT vê as suas
+            boolean isAgencyMember = agencyMemberRepository
+                    .isMemberWithRole(agency.id, userId, AgencyRole.AGENCY_CONSULTANT);
+            if (isAgencyMember) {
+                boolean isOwner = agencyMemberRepository
+                        .isMemberWithRole(agency.id, userId, AgencyRole.AGENCY_OWNER);
+                if (isOwner) {
+                    log.debug("Agency B2B bypass granted: AGENCY_OWNER userId={} tripId={}", userId, tripId);
+                    return null; // dono vê tudo
+                }
+                // Consultor: verifica se está vinculado à viagem
+                if (tripRepository.isUserLinkedToTrip(tripId, userId)) {
+                    log.debug("Agency B2B bypass granted: AGENCY_CONSULTANT userId={} tripId={}", userId, tripId);
+                    return null;
+                }
+                log.warn("Trip access denied: AGENCY_CONSULTANT userId={} not linked to tripId={}", userId, tripId);
+                return Response.status(Response.Status.FORBIDDEN).entity(FORBIDDEN_TRIP_MSG).build();
+            }
+
+            log.warn("Trip access denied: userId={} not agency member for agencyId={} tripId={}", userId, agency.id, tripId);
+            return Response.status(Response.Status.FORBIDDEN).entity(FORBIDDEN_TRIP_MSG).build();
+        }
+
+        // -------------------------------------------------------------------
+        // Fluxo normal B2C
+        // -------------------------------------------------------------------
+        if (!tripRepository.isUserLinkedToTrip(tripId, userId)) {
+            log.warn("Trip access denied: tripId={}, userId={}, reason=not_member", tripId, userId);
             return Response.status(Response.Status.FORBIDDEN).entity(FORBIDDEN_TRIP_MSG).build();
         }
         return null;

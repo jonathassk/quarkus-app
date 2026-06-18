@@ -2,6 +2,7 @@ package org.example.infrastructure.config.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
+import org.example.application.services.MagicLinkService;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripService;
 import org.example.application.services.UserService;
@@ -22,7 +23,6 @@ import org.example.controller.TripDocumentController;
 import org.example.controller.UserController;
 import org.example.application.services.AuthSessionService;
 import org.example.application.services.impl.UserSyncService;
-import org.example.infrastructure.auth.NeonAuthJwtVerifier;
 import org.example.infrastructure.storage.ObjectStorageService;
 import org.example.domain.repository.*;
 import org.example.utils.UserDataVerification;
@@ -69,6 +69,18 @@ public class ApplicationConfig {
     @ApplicationScoped
     public TripChecklistItemRepository tripChecklistItemRepository() {
         return new TripChecklistItemRepository();
+    }
+
+    @Produces
+    @ApplicationScoped
+    public AgencyRepository agencyRepository() {
+        return new AgencyRepository();
+    }
+
+    @Produces
+    @ApplicationScoped
+    public AgencyMemberRepository agencyMemberRepository() {
+        return new AgencyMemberRepository();
     }
 
     @Produces
@@ -129,14 +141,16 @@ public class ApplicationConfig {
             UserRepository userRepository,
             TripRepository tripRepository,
             TokenService tokenService,
-            org.example.application.services.TripCollaborationService tripCollaborationService) {
+            org.example.application.services.TripCollaborationService tripCollaborationService,
+            AgencyMemberRepository agencyMemberRepository) {
         return new TripController(
                 createTripUseCase,
                 updateTripUseCase,
                 userRepository,
                 tripRepository,
                 tokenService,
-                tripCollaborationService);
+                tripCollaborationService,
+                agencyMemberRepository);
     }
 
     @Produces
@@ -157,9 +171,9 @@ public class ApplicationConfig {
             TokenService tokenService,
             UserRepository userRepository,
             AuthSessionService authSessionService,
-            NeonAuthJwtVerifier neonAuthJwtVerifier) {
+            MagicLinkService magicLinkService) {
         return new AuthController(
-                tokenService, userRepository, authSessionService, neonAuthJwtVerifier);
+                tokenService, userRepository, authSessionService, magicLinkService);
     }
 
     @Produces

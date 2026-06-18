@@ -4,6 +4,7 @@ import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.enums.Gender;
+import org.example.domain.enums.UserType;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -102,6 +103,19 @@ public class User extends PanacheEntity {
     @Column(name = "role", length = 20)
     @Builder.Default
     private String role = "USER";
+
+    /**
+     * Tipo de usuário na plataforma.
+     * <ul>
+     *   <li>{@link UserType#GUEST}   – criado por agência; autentica via Magic Link JWT.</li>
+     *   <li>{@link UserType#FREE}    – conta B2C gratuita.</li>
+     *   <li>{@link UserType#PREMIUM} – assinatura B2C ativa.</li>
+     * </ul>
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_type", length = 20, nullable = false)
+    @Builder.Default
+    private UserType userType = UserType.FREE;
 
     @PrePersist
     protected void onCreate() {
