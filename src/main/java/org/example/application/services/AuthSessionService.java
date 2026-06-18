@@ -156,6 +156,7 @@ public class AuthSessionService {
                 .fullname(user.getFullName())
                 .token(token)
                 .expiresIn(3600L)
+                .userType(user.getUserType() != null ? user.getUserType().name() : "FREE")
                 .build();
     }
 

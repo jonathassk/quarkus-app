@@ -53,6 +53,7 @@ public class TokenServiceImpl implements TokenService {
                     .upn(user.getEmail())
                     .groups(Collections.singleton("USER"))
                     .claim("userId", user.id)
+                    .claim("userType", user.getUserType() != null ? user.getUserType().name() : "FREE")
                     .expiresIn(Duration.ofDays(7))
                     .sign(KeyUtils.readPrivateKey(privateKeyLocation));
         } catch (Exception e) {

@@ -126,6 +126,7 @@ public class AuthController {
                     .fullname(user.getFullName())
                     .id(user.id)
                     .expiresIn(null)
+                    .userType(user.getUserType() != null ? user.getUserType().name() : "FREE")
                     .build();
 
             return Response.ok(response).build();
