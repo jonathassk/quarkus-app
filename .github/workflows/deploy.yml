@@ -33,8 +33,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: sa-east-1
 
-      - name: Deploy to AWS Lambda
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Deploy with SAM
         run: |
-          aws lambda update-function-code \
-            --function-name arn:aws:lambda:sa-east-1:252186483726:function:baggagi-back-QuarkusApp-bZQXfpq4Qxi8 \
-            --zip-file fileb://target/function.zip
+          sam deploy \
+            --template target/sam.jvm.yaml \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
