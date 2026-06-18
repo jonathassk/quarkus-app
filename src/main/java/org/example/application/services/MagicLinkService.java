@@ -192,7 +192,6 @@ public class MagicLinkService {
 
     private record ParsedMagicLink(String email, Long tripId) {}
 
-    @Transactional
     private User resolveOrCreateGuest(String email, Long tripId) {
         return userRepository.findByEmail(email)
                 .orElseGet(() -> {

@@ -27,8 +27,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Slf4j
+@Tag(name = "Users", description = "Gerenciamento de contas de usuário B2C, cadastro, login tradicional e perfil")
 @Path("/api/v1/users")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -47,7 +55,16 @@ public class UserController {
     @POST
     @Transactional
     @Path("/create-user")
-    public Response createUserEmail(UserCreateRequestDTO dto) {
+    @Operation(
+        summary = "Criar usuário comum (B2C)",
+        description = "Cadastra um novo usuário no sistema usando e-mail e senha tradicionais."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "Usuário criado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos ou e-mail já em uso"),
+        @APIResponse(responseCode = "500", description = "Erro interno no servidor")
+    })
+    public Response createUserEmail(@RequestBody(description = "Dados para criação do usuário", required = true) UserCreateRequestDTO dto) {
         if (!userDataVerification.verifyUserData(dto).isEmpty()) {
             log.warn("Create user rejected: validation failed for email={}", dto.getEmail());
             return Response.status(Response.Status.BAD_REQUEST)
@@ -75,7 +92,17 @@ public class UserController {
 
     @POST
     @Path("/login")
-    public Response loginUser(UserLoginRequestDTO request) {
+    @Operation(
+        summary = "Login tradicional por e-mail/senha",
+        description = "Autentica um usuário e-mail/senha comum e retorna o token JWT no header Authorization e no body."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Login efetuado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados de login ausentes"),
+        @APIResponse(responseCode = "401", description = "Credenciais inválidas"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
+    public Response loginUser(@RequestBody(description = "Credenciais de login", required = true) UserLoginRequestDTO request) {
         if (request.getEmail() == null || request.getEmail().isEmpty()
                 || request.getPassword() == null || request.getPassword().isEmpty()) {
             log.warn("Login rejected: missing email or password");
@@ -159,6 +186,14 @@ public class UserController {
      */
     @GET
     @Path("/search")
+    @Operation(
+        summary = "Buscar usuários para convite",
+        description = "Busca usuários registrados no Baggagi que combinem com a query para serem convidados a uma viagem."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Resultados da busca retornados com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado")
+    })
     public Response searchUsers(
             @QueryParam("q") String query,
             @Context HttpHeaders headers) {
@@ -214,6 +249,15 @@ public class UserController {
 
     @GET
     @Path("/auth/profile")
+    @Operation(
+        summary = "Obter perfil do usuário autenticado",
+        description = "Retorna os detalhes do perfil do usuário autenticado no momento."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Dados do perfil retornados com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "404", description = "Usuário não encontrado")
+    })
     public Response getProfile(@Context HttpHeaders headers) {
         Optional<Long> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
@@ -243,8 +287,17 @@ public class UserController {
     @PATCH
     @Path("/auth/profile")
     @Transactional
+    @Operation(
+        summary = "Atualizar perfil do usuário",
+        description = "Atualiza o nome completo, o idioma ou outras configurações de perfil do usuário atual."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Perfil atualizado com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "404", description = "Usuário não encontrado")
+    })
     public Response updateProfile(
-            UserProfileUpdateRequestDTO dto,
+            @RequestBody(description = "Dados para atualização do perfil", required = true) UserProfileUpdateRequestDTO dto,
             @Context HttpHeaders headers) {
         Optional<Long> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {

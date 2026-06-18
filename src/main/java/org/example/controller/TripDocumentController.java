@@ -13,10 +13,12 @@ import org.jboss.resteasy.plugins.providers.multipart.InputPart;
 import org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput;
 import org.example.application.dto.common.ApiErrorBody;
 import org.example.application.dto.document.*;
+import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripDocument;
 import org.example.domain.entity.User;
+import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentStatus;
 import org.example.domain.repository.TripDocumentRepository;
 import org.example.domain.repository.TripRepository;
@@ -30,8 +32,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Slf4j
+@Tag(name = "Trip Documents", description = "Gerenciamento de arquivos e documentos anexados aos roteiros de viagem (R2/S3)")
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -43,10 +53,20 @@ public class TripDocumentController {
     private final UserRepository userRepository;
     private final TokenService tokenService;
     private final ObjectStorageService objectStorageService;
+    private final B2bAuditService auditService;
 
     @GET
     @Path("/{tripId}/documents")
     @Transactional(Transactional.TxType.REQUIRED)
+    @Operation(
+        summary = "Listar documentos de uma viagem",
+        description = "Retorna todos os documentos prontos (READY) vinculados a uma viagem específica."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Lista de documentos retornada com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem")
+    })
     public Response listDocuments(
             @PathParam("tripId") Long tripId,
             @Context HttpHeaders headers) {
@@ -79,6 +99,18 @@ public class TripDocumentController {
     @Path("/{tripId}/documents/upload")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Transactional
+    @Operation(
+        summary = "Enviar arquivo diretamente (API)",
+        description = "Faz o upload de um documento em formato multipart/form-data diretamente pela API para o R2. Limite de 10 MB."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "Documento enviado e criado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Arquivo ausente, vazio, maior que 10MB ou tipo não suportado"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
+        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+    })
     public Response uploadDocument(
             @PathParam("tripId") Long tripId,
             MultipartFormDataInput multipart,
@@ -157,6 +189,13 @@ public class TripDocumentController {
                     .build();
 
             tripDocumentRepository.persist(doc);
+
+            auditService.record(
+                    trip, userIdOpt.get(),
+                    B2bTripLogAction.DOCUMENT_UPLOADED,
+                    "DOCUMENT", doc.id,
+                    "Documento enviado: '" + doc.getTitle() + "'");
+
             return Response.status(Response.Status.CREATED).entity(toResponse(doc)).build();
         } catch (Exception e) {
             log.error(
@@ -172,9 +211,21 @@ public class TripDocumentController {
     @POST
     @Path("/{tripId}/documents/upload-request")
     @Transactional
+    @Operation(
+        summary = "Solicitar upload presignado",
+        description = "Gera uma URL presignada para o frontend enviar o arquivo diretamente ao Cloudflare R2 (S3)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "URL presignada gerada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos ou tipo de arquivo não suportado"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
+        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+    })
     public Response uploadRequest(
             @PathParam("tripId") Long tripId,
-            UploadDocumentRequest req,
+            @RequestBody(description = "Nome do arquivo e content type", required = true) UploadDocumentRequest req,
             @Context HttpHeaders headers) {
         Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
@@ -273,9 +324,20 @@ public class TripDocumentController {
     @POST
     @Path("/{tripId}/documents/upload-confirm")
     @Transactional
+    @Operation(
+        summary = "Confirmar upload presignado",
+        description = "Muda o status do documento de PENDING para READY após o frontend fazer o upload direto ao R2."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Upload confirmado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos ou documento não pendente"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Documento ou viagem não encontrados")
+    })
     public Response uploadConfirm(
             @PathParam("tripId") Long tripId,
-            ConfirmUploadRequest req,
+            @RequestBody(description = "ID do documento a ser confirmado", required = true) ConfirmUploadRequest req,
             @Context HttpHeaders headers) {
         Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
@@ -321,6 +383,13 @@ public class TripDocumentController {
 
         try {
             doc.setStatus(DocumentStatus.READY);
+
+            auditService.record(
+                    doc.getTrip(), userIdOpt.get(),
+                    B2bTripLogAction.DOCUMENT_UPLOADED,
+                    "DOCUMENT", doc.id,
+                    "Upload confirmado: '" + doc.getTitle() + "'");
+
             return Response.ok(toResponse(doc)).build();
         } catch (Exception e) {
             log.error(
@@ -336,6 +405,16 @@ public class TripDocumentController {
     @DELETE
     @Path("/{tripId}/documents/{docId}")
     @Transactional
+    @Operation(
+        summary = "Excluir documento",
+        description = "Exclui permanentemente um documento de uma viagem e remove o arquivo correspondente do R2."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "240", description = "Documento excluído com sucesso (No Content)"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Documento não encontrado")
+    })
     public Response deleteDocument(
             @PathParam("tripId") Long tripId,
             @PathParam("docId") Long docId,
@@ -362,11 +441,21 @@ public class TripDocumentController {
         }
 
         TripDocument doc = docOpt.get();
+        String docTitle = doc.getTitle();
+        Trip trip = doc.getTrip();
+
         try {
             if (objectStorageService.isConfigured() && doc.getS3Key() != null && !doc.getS3Key().isBlank()) {
                 objectStorageService.deleteObject(doc.getS3Key());
             }
             tripDocumentRepository.delete(doc);
+
+            auditService.record(
+                    trip, userIdOpt.get(),
+                    B2bTripLogAction.DOCUMENT_DELETED,
+                    "DOCUMENT", docId,
+                    "Documento excluído: '" + docTitle + "'");
+
             log.info("Document deleted tripId={} docId={} userId={}", tripId, docId, userIdOpt.get());
             return Response.noContent().build();
         } catch (Exception e) {
@@ -378,6 +467,18 @@ public class TripDocumentController {
     @GET
     @Path("/{tripId}/documents/{docId}/view-request")
     @Transactional(Transactional.TxType.REQUIRED)
+    @Operation(
+        summary = "Solicitar URL de visualização de documento",
+        description = "Gera uma URL presignada temporária (GET) para visualizar/baixar o arquivo diretamente do R2 de forma segura."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "URL presignada de visualização gerada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Documento não pronto para visualização"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Documento não encontrado"),
+        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+    })
     public Response viewRequest(
             @PathParam("tripId") Long tripId,
             @PathParam("docId") Long docId,

@@ -143,6 +143,12 @@
             <artifactId>stripe-java</artifactId>
             <version>25.13.0</version>
         </dependency>
+
+        <!-- OpenAPI / Swagger UI -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

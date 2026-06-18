@@ -6,6 +6,13 @@ import jakarta.ws.rs.core.Response;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.dto.user.response.UserResponseDTO;
 import org.example.application.services.AuthSessionService;
 import org.example.application.services.MagicLinkService;
@@ -18,6 +25,7 @@ import org.example.utils.RequestAuthHeaders;
 import java.util.Map;
 
 @Slf4j
+@Tag(name = "Auth", description = "Autenticação, sincronização de sessão e Magic Links para guests")
 @Path("/api/v1/auth")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -35,6 +43,17 @@ public class AuthController {
      */
     @POST
     @Path("/session-sync")
+    @Operation(
+        summary = "Sincronizar sessão Neon Auth",
+        description = "Valida o JWT Neon Auth (Google OAuth, e-mail/senha) e provisiona o usuário na tabela `users` (JIT). " +
+                      "Deve ser chamado após todo login no frontend — é idempotente. " +
+                      "Se o e-mail já existir como GUEST, faz o upgrade automático para FREE."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Sessão sincronizada — retorna dados do usuário + token de sessão"),
+        @APIResponse(responseCode = "401", description = "Token ausente, inválido ou expirado"),
+        @APIResponse(responseCode = "500", description = "Erro interno durante a sincronização")
+    })
     public Response sessionSync(
             @HeaderParam("Authorization") String authorizationHeader,
             @HeaderParam(RequestAuthHeaders.BAGGAGI_AUTHORIZATION) String baggagiAuthorizationHeader) {
@@ -66,6 +85,15 @@ public class AuthController {
 
     @GET
     @Path("/me")
+    @Operation(
+        summary = "Perfil do usuário autenticado",
+        description = "Retorna os dados do usuário dono do token JWT atual."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Dados do usuário autenticado"),
+        @APIResponse(responseCode = "401", description = "Token ausente ou inválido"),
+        @APIResponse(responseCode = "404", description = "Usuário não encontrado")
+    })
     public Response getAuthenticatedUser(@HeaderParam("Authorization") String authorizationHeader) {
         if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
             log.warn("GET /auth/me rejected: missing or invalid Authorization header");
@@ -121,7 +149,19 @@ public class AuthController {
      */
     @POST
     @Path("/magic-link/request")
-    public Response requestMagicLink(MagicLinkRequestDTO body) {
+    @Operation(
+        summary = "Solicitar Magic Link (guest)",
+        description = "Gera um JWT de Magic Link de 15 minutos para um e-mail vinculado a uma viagem de agência. " +
+                      "Endpoint público — sem `Authorization` header. " +
+                      "A resposta é sempre 200 para não revelar se o e-mail existe."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Requisição processada (link enviado ou e-mail não vinculado — mesmo body)"),
+        @APIResponse(responseCode = "400", description = "email ou tripId ausentes"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
+    public Response requestMagicLink(
+        @RequestBody(description = "E-mail do guest e ID da viagem", required = true) MagicLinkRequestDTO body) {
         if (body == null || body.getEmail() == null || body.getTripId() == null) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(errorBody("INVALID_REQUEST", "email e tripId são obrigatórios"))
@@ -159,7 +199,21 @@ public class AuthController {
      */
     @POST
     @Path("/magic-link/verify")
-    public Response verifyMagicLink(MagicLinkVerifyRequestDTO body) {
+    @Operation(
+        summary = "Verificar Magic Link e obter session token (guest)",
+        description = "Valida o token JWT do Magic Link recebido via e-mail e retorna um access token de sessão " +
+                      "normal (válido 7 dias), além do `userId` e `tripId`. " +
+                      "Endpoint público — sem `Authorization` header. " +
+                      "Use o `accessToken` retornado como `Bearer` em todos os endpoints protegidos."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Token de sessão emitido com sucesso"),
+        @APIResponse(responseCode = "400", description = "Campo `token` ausente"),
+        @APIResponse(responseCode = "401", description = "Token expirado (TOKEN_EXPIRED), inválido (INVALID_TOKEN), ou de tipo errado (INVALID_TOKEN_TYPE)"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
+    public Response verifyMagicLink(
+        @RequestBody(description = "JWT do magic link recebido via e-mail", required = true) MagicLinkVerifyRequestDTO body) {
         if (body == null || body.getToken() == null || body.getToken().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(errorBody("INVALID_REQUEST", "token é obrigatório"))

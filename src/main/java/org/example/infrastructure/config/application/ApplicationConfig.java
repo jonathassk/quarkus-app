@@ -6,6 +6,7 @@ import org.example.application.services.MagicLinkService;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripService;
 import org.example.application.services.UserService;
+import org.example.application.services.B2bAuditService;
 import org.example.application.services.impl.TripServiceImpl;
 import org.example.application.services.impl.UserServiceImpl;
 import org.example.application.usecases.CreateTripUseCaseimpl;
@@ -20,9 +21,11 @@ import org.example.controller.AuthController;
 import org.example.controller.TripController;
 import org.example.controller.TripChecklistController;
 import org.example.controller.TripDocumentController;
+import org.example.controller.TripShareController;
 import org.example.controller.UserController;
 import org.example.application.services.AuthSessionService;
 import org.example.application.services.impl.UserSyncService;
+import org.example.application.services.TripCollaborationService;
 import org.example.infrastructure.storage.ObjectStorageService;
 import org.example.domain.repository.*;
 import org.example.utils.UserDataVerification;
@@ -71,17 +74,7 @@ public class ApplicationConfig {
         return new TripChecklistItemRepository();
     }
 
-    @Produces
-    @ApplicationScoped
-    public AgencyRepository agencyRepository() {
-        return new AgencyRepository();
-    }
 
-    @Produces
-    @ApplicationScoped
-    public AgencyMemberRepository agencyMemberRepository() {
-        return new AgencyMemberRepository();
-    }
 
     @Produces
     @ApplicationScoped
@@ -142,7 +135,8 @@ public class ApplicationConfig {
             TripRepository tripRepository,
             TokenService tokenService,
             org.example.application.services.TripCollaborationService tripCollaborationService,
-            AgencyMemberRepository agencyMemberRepository) {
+            AgencyMemberRepository agencyMemberRepository,
+            org.example.application.services.B2bAuditService auditService) {
         return new TripController(
                 createTripUseCase,
                 updateTripUseCase,
@@ -150,7 +144,8 @@ public class ApplicationConfig {
                 tripRepository,
                 tokenService,
                 tripCollaborationService,
-                agencyMemberRepository);
+                agencyMemberRepository,
+                auditService);
     }
 
     @Produces
@@ -183,13 +178,15 @@ public class ApplicationConfig {
             TripDocumentRepository tripDocumentRepository,
             UserRepository userRepository,
             TokenService tokenService,
-            ObjectStorageService objectStorageService) {
+            ObjectStorageService objectStorageService,
+            B2bAuditService auditService) {
         return new TripDocumentController(
                 tripRepository,
                 tripDocumentRepository,
                 userRepository,
                 tokenService,
-                objectStorageService);
+                objectStorageService,
+                auditService);
     }
 
     @Produces
@@ -198,8 +195,21 @@ public class ApplicationConfig {
             TripRepository tripRepository,
             TripChecklistItemRepository tripChecklistItemRepository,
             UserRepository userRepository,
-            TokenService tokenService) {
+            TokenService tokenService,
+            B2bAuditService auditService) {
         return new TripChecklistController(
-                tripRepository, tripChecklistItemRepository, userRepository, tokenService);
+                tripRepository, tripChecklistItemRepository, userRepository, tokenService, auditService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public TripShareController tripShareController(
+            TripRepository tripRepository,
+            UserRepository userRepository,
+            TokenService tokenService,
+            TripCollaborationService tripCollaborationService,
+            B2bAuditService auditService) {
+        return new TripShareController(
+                tripRepository, userRepository, tokenService, tripCollaborationService, auditService);
     }
 } 

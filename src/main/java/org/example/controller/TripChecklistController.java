@@ -10,20 +10,30 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.checklist.*;
 import org.example.application.dto.common.ApiErrorBody;
+import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripChecklistItem;
 import org.example.domain.entity.User;
+import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.repository.TripChecklistItemRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.utils.RequestAuthHeaders;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
+@Tag(name = "Trip Checklist", description = "Gerenciamento de tarefas (checklist) em roteiros de viagem")
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -34,10 +44,20 @@ public class TripChecklistController {
     private final TripChecklistItemRepository checklistRepository;
     private final UserRepository userRepository;
     private final TokenService tokenService;
+    private final B2bAuditService auditService;
 
     @GET
     @Path("/{tripId}/checklist")
     @Transactional(Transactional.TxType.REQUIRED)
+    @Operation(
+        summary = "Listar itens de checklist",
+        description = "Retorna todos os itens de checklist vinculados a uma viagem específica."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Lista de itens de checklist retornada com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem")
+    })
     public Response listItems(
             @PathParam("tripId") Long tripId,
             @Context HttpHeaders headers) {
@@ -64,9 +84,20 @@ public class TripChecklistController {
     @POST
     @Path("/{tripId}/checklist")
     @Transactional
+    @Operation(
+        summary = "Criar item de checklist",
+        description = "Adiciona um novo item de checklist em uma viagem específica."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "Item criado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada")
+    })
     public Response createItem(
             @PathParam("tripId") Long tripId,
-            CreateTripChecklistItemRequest body,
+            @RequestBody(description = "Dados para criação do item", required = true) CreateTripChecklistItemRequest body,
             @Context HttpHeaders headers) {
         Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
@@ -108,6 +139,13 @@ public class TripChecklistController {
                             .createdBy(user)
                             .build();
             checklistRepository.persist(item);
+
+            auditService.record(
+                    trip, userIdOpt.get(),
+                    B2bTripLogAction.CHECKLIST_ITEM_CREATED,
+                    "CHECKLIST_ITEM", item.id,
+                    "Item de checklist criado: '" + title + "'");
+
             return Response.status(Response.Status.CREATED).entity(toResponse(item)).build();
         } catch (Exception e) {
             log.error("Create checklist item failed tripId={}", tripId, e);
@@ -118,10 +156,21 @@ public class TripChecklistController {
     @PATCH
     @Path("/{tripId}/checklist/{itemId}")
     @Transactional
+    @Operation(
+        summary = "Atualizar item de checklist",
+        description = "Atualiza parcialmente o título, as anotações ou o status de conclusão de um item de checklist."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Item atualizado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Item de checklist ou viagem não encontrados")
+    })
     public Response updateItem(
             @PathParam("tripId") Long tripId,
             @PathParam("itemId") Long itemId,
-            UpdateTripChecklistItemRequest body,
+            @RequestBody(description = "Dados para atualização do item", required = true) UpdateTripChecklistItemRequest body,
             @Context HttpHeaders headers) {
         Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
@@ -139,6 +188,11 @@ public class TripChecklistController {
         }
 
         TripChecklistItem item = itemOpt.get();
+
+        // Snapshot antes da edição
+        String prevTitle = item.getTitle();
+        Boolean prevCompleted = item.getCompleted();
+
         if (body != null) {
             if (body.getTitle() != null) {
                 String title = body.getTitle().trim();
@@ -161,6 +215,19 @@ public class TripChecklistController {
 
         try {
             checklistRepository.persist(item);
+
+            Trip trip = tripRepository.findById(tripId);
+            final Long actorId = userIdOpt.get();
+            String prevJson = "{\"title\":\"" + esc(prevTitle) + "\",\"completed\":" + prevCompleted + "}";
+            String newJson  = "{\"title\":\"" + esc(item.getTitle()) + "\",\"completed\":" + item.getCompleted() + "}";
+            auditService.record(
+                    trip, actorId,
+                    B2bTripLogAction.CHECKLIST_ITEM_UPDATED,
+                    "CHECKLIST_ITEM", itemId,
+                    prevJson, newJson,
+                    "Item de checklist atualizado: '" + item.getTitle() + "'",
+                    null);
+
             return Response.ok(toResponse(item)).build();
         } catch (Exception e) {
             log.error("Update checklist item failed tripId={} itemId={}", tripId, itemId, e);
@@ -171,6 +238,16 @@ public class TripChecklistController {
     @DELETE
     @Path("/{tripId}/checklist/{itemId}")
     @Transactional
+    @Operation(
+        summary = "Excluir item de checklist",
+        description = "Remove definitivamente um item de checklist de uma viagem."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "240", description = "Item excluído com sucesso (No Content)"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Item de checklist ou viagem não encontrados")
+    })
     public Response deleteItem(
             @PathParam("tripId") Long tripId,
             @PathParam("itemId") Long itemId,
@@ -190,8 +267,19 @@ public class TripChecklistController {
                     .build();
         }
 
+        TripChecklistItem item = itemOpt.get();
+        String deletedTitle = item.getTitle();
+
         try {
-            checklistRepository.delete(itemOpt.get());
+            checklistRepository.delete(item);
+
+            Trip trip = tripRepository.findById(tripId);
+            auditService.record(
+                    trip, userIdOpt.get(),
+                    B2bTripLogAction.CHECKLIST_ITEM_DELETED,
+                    "CHECKLIST_ITEM", itemId,
+                    "Item de checklist excluído: '" + deletedTitle + "'");
+
             return Response.noContent().build();
         } catch (Exception e) {
             log.error("Delete checklist item failed tripId={} itemId={}", tripId, itemId, e);
@@ -263,5 +351,9 @@ public class TripChecklistController {
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                 .entity(ApiErrorBody.builder().code("INTERNAL_ERROR").message(message).build())
                 .build();
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

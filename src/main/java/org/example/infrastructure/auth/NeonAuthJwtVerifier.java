@@ -23,6 +23,7 @@ import java.net.URI;
 import java.net.URL;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Valida JWTs do Neon Auth (EdDSA / JWKS).
@@ -34,13 +35,13 @@ import java.util.List;
 public class NeonAuthJwtVerifier {
 
     @ConfigProperty(name = "neon.auth.base-url")
-    String baseUrl;
+    Optional<String> baseUrl;
 
-    @ConfigProperty(name = "neon.auth.jwks-url", defaultValue = "")
-    String jwksUrlConfig;
+    @ConfigProperty(name = "neon.auth.jwks-url")
+    Optional<String> jwksUrlConfig;
 
-    @ConfigProperty(name = "neon.auth.jwk-json", defaultValue = "")
-    String jwkJsonConfig;
+    @ConfigProperty(name = "neon.auth.jwk-json")
+    Optional<String> jwkJsonConfig;
 
     private String expectedIssuer;
     private String expectedIssuerOrigin;
@@ -49,11 +50,11 @@ public class NeonAuthJwtVerifier {
 
     @PostConstruct
     void init() throws Exception {
-        if (baseUrl == null || baseUrl.isBlank()) {
+        if (baseUrl.isEmpty() || baseUrl.get().isBlank()) {
             log.warn("neon.auth.base-url is not set — Neon Auth JWT validation disabled until configured");
             return;
         }
-        String normalized = normalizeIssuer(baseUrl);
+        String normalized = normalizeIssuer(baseUrl.get());
         URI uri = URI.create(normalized);
         expectedIssuer = normalized;
         expectedIssuerOrigin = uri.getScheme() + "://" + uri.getHost();
@@ -62,14 +63,14 @@ public class NeonAuthJwtVerifier {
         }
 
         JWKSource<SecurityContext> jwkSource;
-        if (jwkJsonConfig != null && !jwkJsonConfig.isBlank()) {
+        if (jwkJsonConfig.isPresent() && !jwkJsonConfig.get().isBlank()) {
             log.info("Using hardcoded/cached JWK for Neon Auth verification");
-            com.nimbusds.jose.jwk.JWKSet jwkSet = com.nimbusds.jose.jwk.JWKSet.parse(jwkJsonConfig.trim());
+            com.nimbusds.jose.jwk.JWKSet jwkSet = com.nimbusds.jose.jwk.JWKSet.parse(jwkJsonConfig.get().trim());
             jwkSource = new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(jwkSet);
             resolvedJwksUrl = "inline-jwk-json";
         } else {
-            resolvedJwksUrl = (jwksUrlConfig != null && !jwksUrlConfig.isBlank())
-                    ? jwksUrlConfig.trim()
+            resolvedJwksUrl = (jwksUrlConfig.isPresent() && !jwksUrlConfig.get().isBlank())
+                    ? jwksUrlConfig.get().trim()
                     : normalized + "/.well-known/jwks.json";
             log.info("Neon Auth JWKS URL: {}", resolvedJwksUrl);
             URL jwksUrl = URI.create(resolvedJwksUrl).toURL();

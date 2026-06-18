@@ -28,9 +28,18 @@ import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.utils.RequestAuthHeaders;
 
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
 import java.util.Optional;
 
 @Slf4j
+@Tag(name = "Payments", description = "Integração com Stripe para pagamentos unitários de viagens e assinaturas de planos")
 @Path("/api/v1/payments")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -114,7 +123,21 @@ public class PaymentController {
     @POST
     @Path("/checkout-session")
     @Transactional
-    public Response createCheckoutSession(PaymentRequestDTO request, @Context HttpHeaders headers) {
+    @Operation(
+        summary = "Criar sessão de checkout do Stripe",
+        description = "Gera a URL de checkout do Stripe para pagamento unitário de viagem (UNITARIO) ou assinaturas de planos (MENSAL, ANUAL, etc.). " +
+                      "Requer autenticação via Bearer token."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "URL da sessão de checkout gerada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Parâmetros inválidos ou Price ID não configurado"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "430", description = "Acesso proibido à viagem ou workspace"),
+        @APIResponse(responseCode = "503", description = "Serviço de pagamentos desabilitado ou sem chaves de API")
+    })
+    public Response createCheckoutSession(
+        @RequestBody(description = "Dados de pagamento (paymentType e targetId)", required = true) PaymentRequestDTO request, 
+        @Context HttpHeaders headers) {
         if (!isStripeConfigured()) {
             return stripeNotConfiguredResponse();
         }
@@ -210,7 +233,19 @@ public class PaymentController {
     @POST
     @Path("/webhook")
     @Consumes(MediaType.TEXT_PLAIN) // Webhooks brutos vêm como texto
-    public Response handleWebhook(String payload, @HeaderParam("Stripe-Signature") String sigHeader) {
+    @Operation(
+        summary = "Webhook do Stripe",
+        description = "Endpoint público para receber eventos assíncronos do Stripe (checkout.session.completed, invoice.paid, etc.). " +
+                      "Valida a assinatura do Stripe usando o Stripe-Signature header."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Evento processado com sucesso"),
+        @APIResponse(responseCode = "400", description = "Assinatura inválida ou payload malformado"),
+        @APIResponse(responseCode = "503", description = "Serviço Stripe não configurado")
+    })
+    public Response handleWebhook(
+        String payload, 
+        @HeaderParam("Stripe-Signature") String sigHeader) {
         if (!isStripeConfigured()) {
             log.error("Stripe webhook recebido mas Stripe não está configurado.");
             return Response.status(Response.Status.SERVICE_UNAVAILABLE).build();

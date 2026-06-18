@@ -15,11 +15,13 @@ import org.example.application.dto.trip.request.NameDescriptionTravelRequestDto;
 import org.example.application.dto.trip.request.TripRequestDTO;
 import org.example.application.dto.trip.request.UserInlcudeRequestDTO;
 import org.example.application.dto.trip.response.TripResponseDTO;
+import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripCollaborationService;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.enums.AgencyRole;
+import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.UserPermissionLevel;
 import org.example.domain.enums.UserType;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
@@ -32,12 +34,20 @@ import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.TripMapper;
 import org.example.utils.RequestAuthHeaders;
 import org.example.utils.TripDataValidator;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
+@Tag(name = "Trips", description = "Gerenciamento do ciclo de vida de viagens (criação, edição, exclusão e listagem)")
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -51,6 +61,7 @@ public class TripController {
     private final TokenService tokenService;
     private final TripCollaborationService tripCollaborationService;
     private final AgencyMemberRepository agencyMemberRepository;
+    private final B2bAuditService auditService;
 
     private static final String UNAUTHORIZED_MSG = "Invalid or expired token";
     private static final String AUTH_HEADER_MSG = "Missing or invalid Authorization header";
@@ -191,6 +202,14 @@ public class TripController {
 
     @GET
     @Transactional(Transactional.TxType.REQUIRED)
+    @Operation(
+        summary = "Listar viagens do usuário autenticado",
+        description = "Retorna todas as viagens vinculadas ou pertencentes ao usuário autenticado atual."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Lista de viagens retornada com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido, expirado ou ausente")
+    })
     public Response listTripsForCurrentUser(@Context HttpHeaders headers) {
         Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
@@ -215,8 +234,18 @@ public class TripController {
     @POST
     @Transactional
     @Path("/create-trip")
+    @Operation(
+        summary = "Criar nova viagem",
+        description = "Cria uma nova viagem com os detalhes fornecidos. O usuário autenticado é definido como criador."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "Viagem criada com sucesso — retorna o ID da nova viagem"),
+        @APIResponse(responseCode = "400", description = "Dados da viagem inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido, expirado ou ausente"),
+        @APIResponse(responseCode = "404", description = "Entidades associadas não encontradas")
+    })
     public Response createTrip(
-            @Valid TripRequestDTO tripRequest,
+            @Valid @RequestBody(description = "Dados para criação da viagem", required = true) TripRequestDTO tripRequest,
             @Context HttpHeaders headers) {
         try {
             // Resolve the authenticated user from the Neon Auth JWT (JIT sync if needed).
@@ -247,6 +276,17 @@ public class TripController {
     @GET
     @Path("/{tripId}")
     @Transactional(Transactional.TxType.REQUIRED)
+    @Operation(
+        summary = "Obter viagem por ID",
+        description = "Retorna os detalhes completos de uma viagem específica se o usuário autenticado for membro/colaborador. " +
+                      "Viagens de agência (B2B) aceitam bypass para guests vinculados."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Detalhes da viagem retornados com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada")
+    })
     public Response getTripById(@PathParam("tripId") Long tripId,
                                @Context HttpHeaders headers) {
         Response denied = ensureTripMember(tripId, headers);
@@ -261,8 +301,21 @@ public class TripController {
     @PUT
     @Transactional
     @Path("/{tripId}/update-trip")
+    @Operation(
+        summary = "Atualizar viagem completa",
+        description = "Substitui todos os dados da viagem (roteiro, atividades, etc.) pelos novos valores fornecidos. " +
+                      "Operação auditada para viagens B2B."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Viagem atualizada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Sem permissão de edição para esta viagem"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
     public Response updateTrip(@PathParam("tripId") Long tripId,
-                              @Valid TripRequestDTO tripRequest,
+                              @Valid @RequestBody(description = "Novos dados da viagem", required = true) TripRequestDTO tripRequest,
                               @Context HttpHeaders headers) {
         Response denied = ensureTripEditor(tripId, headers);
         if (denied != null) {
@@ -273,6 +326,12 @@ public class TripController {
             Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
             TripResponseDTO tripResponse =
                     TripMapper.mapToTripResponseDTO(updatedTrip, tripCollaborationService);
+
+            resolveAuthenticatedUserId(headers).ifPresent(uid ->
+                    auditService.record(updatedTrip, uid,
+                            B2bTripLogAction.TRIP_UPDATED,
+                            "Viagem atualizada via PUT"));
+
             return Response.ok(tripResponse).build();
         } catch (NotFoundException e) {
             log.warn("Update trip rejected: tripId={}, reason={}", tripId, e.getMessage());
@@ -291,9 +350,22 @@ public class TripController {
     @PATCH
     @Transactional
     @Path("/{tripId}/update-name-description")
+    @Operation(
+        summary = "Atualizar nome e descrição da viagem",
+        description = "Atualiza parcialmente apenas o nome e a descrição de uma viagem específica. " +
+                      "Operação auditada com snapshot de alteração para viagens B2B."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Nome e descrição atualizados com sucesso"),
+        @APIResponse(responseCode = "400", description = "Campos obrigatórios vazios ou inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Sem permissão de edição para esta viagem"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
     public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId,
-                                                  @Valid NameDescriptionTravelRequestDto request,
-                                                  @Context HttpHeaders headers) {
+                                                   @Valid @RequestBody(description = "Novo nome e descrição", required = true) NameDescriptionTravelRequestDto request,
+                                                   @Context HttpHeaders headers) {
         Response denied = ensureTripEditor(tripId, headers);
         if (denied != null) {
             return denied;
@@ -306,9 +378,28 @@ public class TripController {
                         .entity("Name and description cannot be null or empty")
                         .build();
             }
+
+            // Captura o nome anterior para o snapshot de auditoria
+            Trip before = tripRepository.findById(tripId);
+            String previousName = before != null ? before.getName() : null;
+
             Trip updatedTrip = updateTripUseCase.updateNameAndDescription(tripId, request);
             TripResponseDTO tripResponse =
                     TripMapper.mapToTripResponseDTO(updatedTrip, tripCollaborationService);
+
+            resolveAuthenticatedUserId(headers).ifPresent(uid -> {
+                String prevJson = previousName != null
+                        ? "{\"name\": \"" + esc(previousName) + "\"}" : null;
+                String newJson = "{\"name\": \"" + esc(request.getName()) + "\"}";
+                auditService.record(
+                        updatedTrip, uid,
+                        B2bTripLogAction.TRIP_UPDATED,
+                        "TRIP", tripId,
+                        prevJson, newJson,
+                        "Nome/descrição da viagem alterado para '" + request.getName() + "'",
+                        null);
+            });
+
             return Response.ok(tripResponse).build();
         } catch (NotFoundException e) {
             log.warn("Update trip name/description rejected: tripId={}, reason={}", tripId, e.getMessage());
@@ -324,8 +415,20 @@ public class TripController {
     @PATCH
     @Path("/{tripId}/update-users-trip")
     @Transactional
+    @Operation(
+        summary = "Atualizar colaboradores da viagem",
+        description = "Adiciona, remove ou atualiza permissões de múltiplos colaboradores na viagem."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "Colaboradores atualizados com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados da requisição inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Sem permissão de gerenciamento (manager/owner)"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
     public Response updateUsersTrip(@PathParam("tripId") Long tripId,
-                                   @Valid List<UserInlcudeRequestDTO> request,
+                                   @Valid @RequestBody(description = "Lista de colaboradores e permissões", required = true) List<UserInlcudeRequestDTO> request,
                                    @Context HttpHeaders headers) {
         Response denied = ensureTripManager(tripId, headers);
         if (denied != null) {
@@ -356,6 +459,18 @@ public class TripController {
     @DELETE
     @Path("/{tripId}")
     @Transactional
+    @Operation(
+        summary = "Excluir viagem",
+        description = "Exclui permanentemente uma viagem específica se o usuário autenticado for o proprietário. " +
+                      "Operação auditada para viagens B2B."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "204", description = "Viagem excluída com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Sem permissão de exclusão (apenas owner)"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
     public Response deleteTrip(@PathParam("tripId") Long tripId,
                             @Context HttpHeaders headers) {
         Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
@@ -373,7 +488,19 @@ public class TripController {
             return unauthorizedResponse();
         }
         try {
+            // Captura dados da viagem antes de deletar para o log de auditoria
+            Trip tripBeforeDelete = tripRepository.findById(tripId);
+            String tripName = tripBeforeDelete != null ? tripBeforeDelete.getName() : null;
+
             updateTripUseCase.deleteTrip(tripId, userIdOpt.get());
+
+            if (tripBeforeDelete != null) {
+                auditService.record(
+                        tripBeforeDelete, userIdOpt.get(),
+                        B2bTripLogAction.TRIP_DELETED,
+                        "Viagem '" + (tripName != null ? tripName : tripId) + "' excluída");
+            }
+
             return Response.noContent().build();
         } catch (NotFoundException e) {
             log.warn("Delete trip rejected: tripId={}, reason={}", tripId, e.getMessage());
@@ -433,5 +560,10 @@ public class TripController {
     @Path("/test")
     public String test() {
         return "teste";
+    }
+
+    /** Escapa aspas duplas para embedding seguro em strings JSON inline. */
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

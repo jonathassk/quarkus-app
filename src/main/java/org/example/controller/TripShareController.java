@@ -11,17 +11,27 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.trip.request.ShareTripRequestDTO;
 import org.example.application.dto.trip.request.UpdateSharePermissionDTO;
 import org.example.application.dto.trip.response.TripResponseDTO;
+import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripCollaborationService;
 import org.example.domain.entity.Trip;
+import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.TripMapper;
 import org.example.utils.RequestAuthHeaders;
 
 import java.util.Optional;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Slf4j
+@Tag(name = "Trip Collaboration", description = "Compartilhamento de roteiros de viagem e gerenciamento de membros colaboradores")
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -32,13 +42,25 @@ public class TripShareController {
     private final UserRepository userRepository;
     private final TokenService tokenService;
     private final TripCollaborationService tripCollaborationService;
+    private final B2bAuditService auditService;
 
     @POST
     @Path("/{tripId}/share")
     @Transactional
+    @Operation(
+        summary = "Compartilhar viagem com colaboradores",
+        description = "Adiciona novos usuários colaboradores à viagem com o nível de permissão especificado (READ, EDIT, MANAGE)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Viagem compartilhada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Parâmetros inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido ou permissão insuficiente"),
+        @APIResponse(responseCode = "404", description = "Viagem ou usuário não encontrados")
+    })
     public Response shareTrip(
             @PathParam("tripId") Long tripId,
-            ShareTripRequestDTO request,
+            @RequestBody(description = "Lista de usuários e nível de permissão", required = true) ShareTripRequestDTO request,
             @Context HttpHeaders headers) {
         Optional<Long> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
@@ -46,6 +68,14 @@ public class TripShareController {
         }
         try {
             Trip trip = tripCollaborationService.shareTrip(tripId, actorId.get(), request);
+
+            int count = request != null && request.getUsers() != null ? request.getUsers().size() : 0;
+            auditService.record(
+                    trip, actorId.get(),
+                    B2bTripLogAction.MEMBER_ADDED,
+                    "MEMBER", null,
+                    count + " membro(s) adicionado(s) à viagem");
+
             return Response.ok(mapTrip(trip)).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND).entity(e.getMessage()).build();
@@ -64,6 +94,17 @@ public class TripShareController {
     @DELETE
     @Path("/{tripId}/share/{userId}")
     @Transactional
+    @Operation(
+        summary = "Remover colaborador",
+        description = "Remove o vínculo de um colaborador específico desta viagem."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Colaborador removido com sucesso"),
+        @APIResponse(responseCode = "400", description = "Requisição inválida"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido ou permissão insuficiente"),
+        @APIResponse(responseCode = "404", description = "Viagem ou colaborador não encontrados")
+    })
     public Response removeCollaborator(
             @PathParam("tripId") Long tripId,
             @PathParam("userId") Long memberUserId,
@@ -74,6 +115,13 @@ public class TripShareController {
         }
         try {
             Trip trip = tripCollaborationService.removeMember(tripId, actorId.get(), memberUserId);
+
+            auditService.record(
+                    trip, actorId.get(),
+                    B2bTripLogAction.MEMBER_REMOVED,
+                    "MEMBER", memberUserId,
+                    "Membro userId=" + memberUserId + " removido da viagem");
+
             return Response.ok(mapTrip(trip)).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND).entity(e.getMessage()).build();
@@ -92,10 +140,21 @@ public class TripShareController {
     @PATCH
     @Path("/{tripId}/share/{userId}")
     @Transactional
+    @Operation(
+        summary = "Atualizar permissão de colaborador",
+        description = "Modifica o nível de permissão de um colaborador já existente (READ, EDIT, MANAGE)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Permissão do colaborador atualizada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Parâmetros inválidos"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido ou permissão insuficiente"),
+        @APIResponse(responseCode = "404", description = "Viagem ou colaborador não encontrados")
+    })
     public Response updateCollaboratorPermission(
             @PathParam("tripId") Long tripId,
             @PathParam("userId") Long memberUserId,
-            UpdateSharePermissionDTO body,
+            @RequestBody(description = "Nova permissão", required = true) UpdateSharePermissionDTO body,
             @Context HttpHeaders headers) {
         Optional<Long> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
@@ -105,6 +164,14 @@ public class TripShareController {
             Trip trip =
                     tripCollaborationService.updateMemberPermission(
                             tripId, actorId.get(), memberUserId, body);
+
+            String newPerm = body != null ? body.getPermission() : "?";
+            auditService.record(
+                    trip, actorId.get(),
+                    B2bTripLogAction.MEMBER_PERMISSION_CHANGED,
+                    "MEMBER", memberUserId,
+                    "Permissão de userId=" + memberUserId + " alterada para '" + newPerm + "'");
+
             return Response.ok(mapTrip(trip)).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND).entity(e.getMessage()).build();

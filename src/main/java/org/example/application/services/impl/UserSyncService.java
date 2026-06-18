@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.example.application.services.GuestClaimService;
 import org.example.domain.entity.User;
 import org.example.domain.enums.UserType;
 import org.example.domain.repository.UserRepository;
@@ -26,6 +27,9 @@ import java.util.Optional;
 public class UserSyncService {
 
     private final UserRepository userRepository;
+
+    @Inject
+    GuestClaimService guestClaimService;
 
     @Inject
     public UserSyncService(UserRepository userRepository) {
@@ -79,6 +83,18 @@ public class UserSyncService {
         String normalizedEmail =
                 email != null && !email.isBlank() ? email.trim().toLowerCase() : null;
         if (normalizedEmail != null) {
+            // Tenta o claim de Guest antes do enrich normal.
+            // Se o usuário for GUEST com esse e-mail, ele é elevado para FREE
+            // e seus vínculos com viagens de agência são preservados.
+            User claimed = guestClaimService.claimIfGuest(
+                    normalizedEmail, authUserId, name, pictureUrl);
+            if (claimed != null) {
+                log.info(
+                        "JIT: guest claim completed for userId={} email={} — now FREE",
+                        claimed.id, normalizedEmail);
+                return claimed;
+            }
+
             Optional<User> byEmail = userRepository.findByEmail(normalizedEmail);
             if (byEmail.isPresent()) {
                 User user =
