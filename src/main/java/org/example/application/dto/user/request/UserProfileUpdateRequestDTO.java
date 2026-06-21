@@ -10,4 +10,10 @@ public class UserProfileUpdateRequestDTO {
     private String fullName;
     private String language;
     private String preferredLanguage;
+    private String phoneNumber;
+    private String gender;
+    private String bio;
+    private String dateOfBirth;
+    private String city;
+    private String country;
 }

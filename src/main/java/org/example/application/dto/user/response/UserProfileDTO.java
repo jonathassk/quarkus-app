@@ -16,4 +16,10 @@ public class UserProfileDTO {
     private String preferredLanguage;
     private Instant createdAt;
     private Instant updatedAt;
+    private String phoneNumber;
+    private String gender;
+    private String bio;
+    private String dateOfBirth;
+    private String city;
+    private String country;
 }

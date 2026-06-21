@@ -271,16 +271,7 @@ public class UserController {
                     .entity("User not found")
                     .build();
         }
-        UserProfileDTO profile = UserProfileDTO.builder()
-                .id(user.id)
-                .email(user.getEmail())
-                .username(user.getUsername())
-                .fullName(user.getFullName())
-                .avatar(user.getProfilePictureUrl())
-                .preferredLanguage(user.getPreferredLanguage())
-                .createdAt(user.getCreatedAt())
-                .updatedAt(user.getUpdatedAt())
-                .build();
+        UserProfileDTO profile = toUserProfileDTO(user);
         return Response.ok(profile).build();
     }
 
@@ -321,9 +312,50 @@ public class UserController {
             user.setPreferredLanguage(newLang);
         }
 
+        if (dto.getPhoneNumber() != null) {
+            user.setPhoneNumber(dto.getPhoneNumber());
+        }
+
+        if (dto.getGender() != null) {
+            try {
+                if (dto.getGender().trim().isEmpty()) {
+                    user.setGender(null);
+                } else {
+                    user.setGender(org.example.domain.enums.Gender.valueOf(dto.getGender().toUpperCase()));
+                }
+            } catch (Exception e) {
+                user.setGender(org.example.domain.enums.Gender.OTHER);
+            }
+        }
+
+        if (dto.getBio() != null) {
+            user.setBio(dto.getBio());
+        }
+
+        if (dto.getDateOfBirth() != null) {
+            if (dto.getDateOfBirth().trim().isEmpty()) {
+                user.setDateOfBirth(null);
+            } else {
+                user.setDateOfBirth(java.time.LocalDate.parse(dto.getDateOfBirth()));
+            }
+        }
+
+        if (dto.getCity() != null) {
+            user.setCity(dto.getCity());
+        }
+
+        if (dto.getCountry() != null) {
+            user.setCountry(dto.getCountry());
+        }
+
         userRepository.persist(user);
 
-        UserProfileDTO profile = UserProfileDTO.builder()
+        UserProfileDTO profile = toUserProfileDTO(user);
+        return Response.ok(profile).build();
+    }
+
+    private UserProfileDTO toUserProfileDTO(User user) {
+        return UserProfileDTO.builder()
                 .id(user.id)
                 .email(user.getEmail())
                 .username(user.getUsername())
@@ -332,8 +364,13 @@ public class UserController {
                 .preferredLanguage(user.getPreferredLanguage())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
+                .phoneNumber(user.getPhoneNumber())
+                .gender(user.getGender() != null ? user.getGender().name() : null)
+                .bio(user.getBio())
+                .dateOfBirth(user.getDateOfBirth() != null ? user.getDateOfBirth().toString() : null)
+                .city(user.getCity())
+                .country(user.getCountry())
                 .build();
-        return Response.ok(profile).build();
     }
 
     @GET

@@ -80,7 +80,7 @@ public class User extends PanacheEntity {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
-    @Column(name = "phoneNumber")
+    @Column(name = "phone_number")
     private String phoneNumber;
 
     @Column(name = "phone_verified")
@@ -91,7 +91,7 @@ public class User extends PanacheEntity {
     private String timezone;
 
     @Enumerated(EnumType.STRING)
-    @Column(length = 20)
+    @Column(name = "gender", length = 10)
     private Gender gender;
 
     @Column(name = "bio")
