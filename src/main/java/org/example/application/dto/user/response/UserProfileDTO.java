@@ -22,4 +22,5 @@ public class UserProfileDTO {
     private String dateOfBirth;
     private String city;
     private String country;
+    private java.util.List<String> visitedCountries;
 }

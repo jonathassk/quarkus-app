@@ -22,6 +22,11 @@ import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
 import org.example.utils.RequestAuthHeaders;
 import org.example.utils.UserDataVerification;
+import org.example.infrastructure.storage.ObjectStorageService;
+import org.example.application.dto.document.UploadDocumentRequest;
+import org.example.utils.DocumentUploadSupport;
+import java.util.UUID;
+import java.util.Map;
 
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +56,7 @@ public class UserController {
     private final LoginUserUseCase loginUserUseCase;
     private final UserRepository userRepository;
     private final TokenService tokenService;
+    private final ObjectStorageService objectStorageService;
 
     @POST
     @Transactional
@@ -348,10 +354,143 @@ public class UserController {
             user.setCountry(dto.getCountry());
         }
 
+        if (dto.getAvatar() != null) {
+            user.setProfilePictureUrl(dto.getAvatar());
+        }
+
         userRepository.persist(user);
 
         UserProfileDTO profile = toUserProfileDTO(user);
         return Response.ok(profile).build();
+    }
+
+    @GET
+    @Path("/auth/visited-countries")
+    @Operation(
+        summary = "Obter países visitados pelo usuário autenticado",
+        description = "Retorna a lista de países que o usuário autenticado já visitou."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Lista de países retornada com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "404", description = "Usuário não encontrado")
+    })
+    public Response getVisitedCountries(@Context HttpHeaders headers) {
+        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        if (actorId.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Invalid or expired token")
+                    .build();
+        }
+        User user = userRepository.findById(actorId.get());
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("User not found")
+                    .build();
+        }
+        return Response.ok(user.getVisitedCountries()).build();
+    }
+
+    @PUT
+    @Path("/auth/visited-countries")
+    @Transactional
+    @Operation(
+        summary = "Atualizar lista de países visitados",
+        description = "Substitui a lista de países visitados do usuário autenticado pela nova lista fornecida."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Lista de países atualizada com sucesso"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "404", description = "Usuário não encontrado")
+    })
+    public Response updateVisitedCountries(
+            @RequestBody(description = "Lista de países visitados", required = true) List<String> visitedCountries,
+            @Context HttpHeaders headers) {
+        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        if (actorId.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Invalid or expired token")
+                    .build();
+        }
+        User user = userRepository.findById(actorId.get());
+        if (user == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("User not found")
+                    .build();
+        }
+        user.setVisitedCountries(visitedCountries != null ? visitedCountries : List.of());
+        userRepository.persist(user);
+        return Response.ok(user.getVisitedCountries()).build();
+    }
+
+    @POST
+    @Path("/auth/avatar-upload-request")
+    @Transactional
+    @Operation(
+        summary = "Solicitar upload de avatar presignado",
+        description = "Gera uma URL presignada para o frontend enviar a imagem de perfil diretamente ao Cloudflare R2 (S3)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "URL presignada gerada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos ou tipo de arquivo não suportado"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+    })
+    public Response avatarUploadRequest(
+            @RequestBody(description = "Nome do arquivo e content type", required = true) UploadDocumentRequest req,
+            @Context HttpHeaders headers) {
+        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        if (userIdOpt.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity(Map.of("code", "UNAUTHORIZED", "message", "Token inválido ou expirado"))
+                    .build();
+        }
+        if (!objectStorageService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(Map.of("code", "STORAGE_NOT_CONFIGURED", "message", "Document storage is not configured"))
+                    .build();
+        }
+
+        if (req == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("code", "VALIDATION_ERROR", "message", "Request body is required"))
+                    .build();
+        }
+
+        Optional<DocumentUploadSupport.ResolvedUpload> resolved =
+                DocumentUploadSupport.resolve(req.getFileName(), req.getContentType());
+        if (resolved.isEmpty()) {
+            String msg = DocumentUploadSupport.unsupportedTypeMessage(
+                    req.getContentType(), req.getFileName());
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("code", "UNSUPPORTED_CONTENT_TYPE", "message", msg))
+                    .build();
+        }
+
+        DocumentUploadSupport.ResolvedUpload upload = resolved.get();
+        String extension = DocumentUploadSupport.extractExtension(upload.fileName());
+        
+        // S3 key: avatars/{userId}/avatar-{uuid}{extension}
+        String s3Key = "avatars/" + userIdOpt.get() + "/avatar-" + UUID.randomUUID() + extension;
+
+        try {
+            String uploadUrl = objectStorageService.presignPut(s3Key, upload.contentType());
+            String publicUrl = objectStorageService.getPublicUrl(s3Key);
+
+            var body = Map.of(
+                "uploadUrl", uploadUrl,
+                "s3Key", s3Key,
+                "publicUrl", publicUrl,
+                "expiresInSeconds", objectStorageService.getUploadPresignSeconds()
+            );
+
+            return Response.status(Response.Status.CREATED).entity(body).build();
+        } catch (Exception e) {
+            log.error("Avatar upload request failed userId={}", userIdOpt.get(), e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("code", "INTERNAL_ERROR", "message", "Erro ao gerar URL presignada: " + e.getMessage()))
+                    .build();
+        }
     }
 
     private UserProfileDTO toUserProfileDTO(User user) {
@@ -370,6 +509,7 @@ public class UserController {
                 .dateOfBirth(user.getDateOfBirth() != null ? user.getDateOfBirth().toString() : null)
                 .city(user.getCity())
                 .country(user.getCountry())
+                .visitedCountries(user.getVisitedCountries())
                 .build();
     }
 

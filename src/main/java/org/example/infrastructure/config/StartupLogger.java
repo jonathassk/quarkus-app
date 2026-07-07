@@ -79,18 +79,13 @@ public class StartupLogger {
                     "Defina NEON_AUTH_BASE_URL e NEON_AUTH_JWKS_URL.");
         }
 
-        // Aborta se segredos críticos do Stripe estiverem ausentes em produção
+        // Loga aviso crítico se segredos do Stripe estiverem ausentes.
+        // NÃO derruba o Lambda — os endpoints de pagamento já retornam 503 quando não configurados.
+        // Derrubar o Lambda impede todos os outros endpoints de funcionarem.
         if (!missingSecrets.isEmpty()) {
-            String profile = System.getenv("QUARKUS_PROFILE");
-            boolean isProduction = "lambda".equals(profile) || "prod".equals(profile);
-            if (isProduction) {
-                throw new IllegalStateException(
-                        "STARTUP ABORTED — segredos críticos ausentes: " + missingSecrets +
-                        ". Configure as variáveis de ambiente antes de reiniciar.");
-            } else {
-                log.warn("SECURITY WARNING: segredos ausentes em ambiente não-produção: {}. " +
-                        "Pagamentos não funcionarão.", missingSecrets);
-            }
+            log.error("SECURITY: segredos críticos do Stripe ausentes: {}. " +
+                    "Pagamentos estarão indisponíveis — configure STRIPE_API_KEY e STRIPE_WEBHOOK_SECRET " +
+                    "nas variáveis de ambiente do Lambda.", missingSecrets);
         }
 
         log.info("======================");

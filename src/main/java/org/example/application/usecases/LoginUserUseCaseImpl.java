@@ -40,6 +40,7 @@ public class LoginUserUseCaseImpl implements LoginUserUseCase {
                     .fullname(user.get().getFullName())
                     .id(user.get().id)
                     .expiresIn(604800L)
+                    .avatar(user.get().getProfilePictureUrl())
                     .build();
         } catch (UnauthorizedException e) {
             log.warn("Login failed: invalid password, email={}", email);

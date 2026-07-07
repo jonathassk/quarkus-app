@@ -16,4 +16,5 @@ public class UserProfileUpdateRequestDTO {
     private String dateOfBirth;
     private String city;
     private String country;
+    private String avatar;
 }

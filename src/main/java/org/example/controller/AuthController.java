@@ -127,6 +127,7 @@ public class AuthController {
                     .id(user.id)
                     .expiresIn(null)
                     .userType(user.getUserType() != null ? user.getUserType().name() : "FREE")
+                    .avatar(user.getProfilePictureUrl())
                     .build();
 
             return Response.ok(response).build();

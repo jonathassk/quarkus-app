@@ -90,7 +90,7 @@ public class GuestClaimService {
         if (name != null && !name.isBlank()) {
             guest.setFullName(name.trim());
         }
-        if (pictureUrl != null && !pictureUrl.isBlank()) {
+        if (shouldUpdateProfilePicture(guest.getProfilePictureUrl(), pictureUrl)) {
             guest.setProfilePictureUrl(pictureUrl);
         }
 
@@ -103,5 +103,20 @@ public class GuestClaimService {
                 guest.id, guest.getEmail());
 
         return guest;
+    }
+
+    private boolean shouldUpdateProfilePicture(String currentPic, String newPic) {
+        if (newPic == null || newPic.isBlank()) {
+            return false;
+        }
+        if (currentPic == null || currentPic.isBlank()) {
+            return true;
+        }
+        // Se a foto atual do usuário contém "avatars/" (foto enviada pelo próprio usuário no Baggagi),
+        // não devemos sobrescrever com a foto do Google/redes sociais.
+        if (currentPic.contains("avatars/")) {
+            return false;
+        }
+        return true;
     }
 }

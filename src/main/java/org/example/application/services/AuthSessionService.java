@@ -44,7 +44,6 @@ public class AuthSessionService {
     /**
      * @param authorizationHeader {@code Bearer <neon-auth-jwt>} ou use {@link RequestAuthHeaders#BAGGAGI_AUTHORIZATION}
      */
-    @Transactional
     public UserResponseDTO syncFromBearer(
             String authorizationHeader, String baggagiAuthorizationHeader) {
         log.info("Starting session sync. Authorization header present: {}, Baggagi Authorization header present: {}",
@@ -157,6 +156,7 @@ public class AuthSessionService {
                 .token(token)
                 .expiresIn(3600L)
                 .userType(user.getUserType() != null ? user.getUserType().name() : "FREE")
+                .avatar(user.getProfilePictureUrl())
                 .build();
     }
 

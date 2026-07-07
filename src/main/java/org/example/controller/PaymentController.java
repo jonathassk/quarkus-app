@@ -51,10 +51,10 @@ public class PaymentController {
     private final TokenService tokenService;
 
     @ConfigProperty(name = "stripe.api.key")
-    String apiKey;
+    Optional<String> apiKey;
 
     @ConfigProperty(name = "stripe.webhook.secret")
-    String webhookSecret;
+    Optional<String> webhookSecret;
 
     @ConfigProperty(name = "stripe.success.url")
     String successUrl;
@@ -76,12 +76,14 @@ public class PaymentController {
 
     @PostConstruct
     void init() {
-        if (apiKey == null || apiKey.isBlank()) {
+        String key = apiKey.orElse("").trim();
+        if (key.isEmpty()) {
             log.error("SECURITY: STRIPE_API_KEY não configurado — pagamentos estarão indisponíveis.");
         } else {
-            Stripe.apiKey = apiKey;
+            Stripe.apiKey = key;
         }
-        if (webhookSecret == null || webhookSecret.isBlank()) {
+        String secret = webhookSecret.orElse("").trim();
+        if (secret.isEmpty()) {
             log.error("SECURITY: STRIPE_WEBHOOK_SECRET não configurado — webhooks serão rejeitados.");
         }
     }
@@ -94,8 +96,8 @@ public class PaymentController {
     }
 
     private boolean isStripeConfigured() {
-        return apiKey != null && !apiKey.isBlank() &&
-               webhookSecret != null && !webhookSecret.isBlank();
+        return apiKey.isPresent() && !apiKey.get().isBlank() &&
+               webhookSecret.isPresent() && !webhookSecret.get().isBlank();
     }
 
     private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
@@ -122,7 +124,6 @@ public class PaymentController {
 
     @POST
     @Path("/checkout-session")
-    @Transactional
     @Operation(
         summary = "Criar sessão de checkout do Stripe",
         description = "Gera a URL de checkout do Stripe para pagamento unitário de viagem (UNITARIO) ou assinaturas de planos (MENSAL, ANUAL, etc.). " +
@@ -256,7 +257,7 @@ public class PaymentController {
 
         Event event;
         try {
-            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
+            event = Webhook.constructEvent(payload, sigHeader, webhookSecret.orElse(""));
         } catch (SignatureVerificationException e) {
             log.warn("Stripe Signature Verification failed", e);
             return Response.status(Response.Status.BAD_REQUEST).entity("Signature verification failed").build();

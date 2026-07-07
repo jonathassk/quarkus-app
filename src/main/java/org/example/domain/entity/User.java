@@ -97,6 +97,11 @@ public class User extends PanacheEntity {
     @Column(name = "bio")
     private String bio;
 
+    @Convert(converter = org.example.utils.StringListConverter.class)
+    @Column(name = "visited_countries", columnDefinition = "TEXT")
+    @Builder.Default
+    private java.util.List<String> visitedCountries = new java.util.ArrayList<>();
+
     @Column(name = "deleted_at")
     private Instant deletedAt;
 

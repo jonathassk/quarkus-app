@@ -62,30 +62,70 @@ public class NeonAuthJwtVerifier {
             expectedIssuerOrigin += ":" + uri.getPort();
         }
 
-        JWKSource<SecurityContext> jwkSource;
+        boolean loadedInline = false;
         if (jwkJsonConfig.isPresent() && !jwkJsonConfig.get().isBlank()) {
-            log.info("Using hardcoded/cached JWK for Neon Auth verification");
-            com.nimbusds.jose.jwk.JWKSet jwkSet = com.nimbusds.jose.jwk.JWKSet.parse(jwkJsonConfig.get().trim());
-            jwkSource = new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(jwkSet);
-            resolvedJwksUrl = "inline-jwk-json";
-        } else {
+            String trimmedJwk = jwkJsonConfig.get().trim();
+            // Evita aspas vazias literais "" ou chaves vazias {} configuradas no painel da AWS
+            if (!trimmedJwk.equals("\"\"") && !trimmedJwk.equals("{}")) {
+                try {
+                    log.info("Using hardcoded/cached JWK for Neon Auth verification");
+                    com.nimbusds.jose.jwk.JWKSet jwkSet = com.nimbusds.jose.jwk.JWKSet.parse(trimmedJwk);
+                    this.jwkSource = new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(jwkSet);
+                    resolvedJwksUrl = "inline-jwk-json";
+                    log.info(
+                            "Neon Auth JWT verifier ready (issuer={}, origin={}, jwks={})",
+                            expectedIssuer,
+                            expectedIssuerOrigin,
+                            resolvedJwksUrl);
+                    loadedInline = true;
+                } catch (Exception e) {
+                    log.warn("Failed to parse inline JWK JSON ({}), falling back to JWKS URL resolution", e.getMessage());
+                }
+            }
+        }
+
+        if (!loadedInline) {
+            // Resolve the JWKS URL but do NOT create RemoteJWKSet here.
+            // Network is unavailable during SnapStart snapshot — lazy init on first verify().
             resolvedJwksUrl = (jwksUrlConfig.isPresent() && !jwksUrlConfig.get().isBlank())
                     ? jwksUrlConfig.get().trim()
                     : normalized + "/.well-known/jwks.json";
-            log.info("Neon Auth JWKS URL: {}", resolvedJwksUrl);
-            URL jwksUrl = URI.create(resolvedJwksUrl).toURL();
-            jwkSource = new RemoteJWKSet<>(jwksUrl);
+            log.info(
+                    "Neon Auth JWT verifier configured (issuer={}, origin={}, jwks={}). " +
+                    "RemoteJWKSet will be created lazily on first verify() call (SnapStart-safe).",
+                    expectedIssuer,
+                    expectedIssuerOrigin,
+                    resolvedJwksUrl);
+            // jwkSource remains null here — isConfigured() returns false until getOrInitJwkSource() is called.
+            // Mark as configured via a dedicated flag so isConfigured() returns true.
+            this.remoteJwksUrl = resolvedJwksUrl;
         }
-        this.jwkSource = jwkSource;
-        log.info(
-                "Neon Auth JWT verifier ready (issuer={}, origin={}, jwks={})",
-                expectedIssuer,
-                expectedIssuerOrigin,
-                resolvedJwksUrl);
+    }
+
+    /** URL stored for lazy RemoteJWKSet creation (avoids network in @PostConstruct / SnapStart). */
+    private String remoteJwksUrl;
+
+    /** Lazily creates and caches RemoteJWKSet on first call — safe after SnapStart restore. */
+    private synchronized JWKSource<SecurityContext> getOrInitJwkSource() {
+        if (jwkSource != null) {
+            return jwkSource;
+        }
+        if (remoteJwksUrl == null) {
+            return null;
+        }
+        try {
+            log.info("Lazy-initializing RemoteJWKSet for: {}", remoteJwksUrl);
+            URL url = URI.create(remoteJwksUrl).toURL();
+            jwkSource = new RemoteJWKSet<>(url);
+            log.info("RemoteJWKSet initialized successfully.");
+        } catch (Exception e) {
+            log.error("Failed to initialize RemoteJWKSet from {}: {}", remoteJwksUrl, e.getMessage(), e);
+        }
+        return jwkSource;
     }
 
     public boolean isConfigured() {
-        return jwkSource != null && expectedIssuer != null;
+        return expectedIssuer != null && (jwkSource != null || remoteJwksUrl != null);
     }
 
     public String getExpectedIssuer() {
@@ -97,7 +137,8 @@ public class NeonAuthJwtVerifier {
     }
 
     public NeonAuthClaims verify(String rawToken) {
-        if (!isConfigured()) {
+        JWKSource<SecurityContext> source = getOrInitJwkSource();
+        if (source == null || !isConfigured()) {
             throw new AuthTokenException(
                     "NEON_AUTH_NOT_CONFIGURED",
                     "neon.auth.base-url is not configured");
@@ -107,7 +148,7 @@ public class NeonAuthJwtVerifier {
             log.info("Parsed SignedJWT header: {}", signed.getHeader().toJSONObject());
             
             // Procura a chave correspondente no JWKS
-            List<JWK> matches = jwkSource.get(new JWKSelector(JWKMatcher.forJWSHeader(signed.getHeader())), null);
+            List<JWK> matches = source.get(new JWKSelector(JWKMatcher.forJWSHeader(signed.getHeader())), null);
             log.info("JWKSource returned {} matches for the header", matches == null ? 0 : matches.size());
             
             if (matches == null || matches.isEmpty()) {

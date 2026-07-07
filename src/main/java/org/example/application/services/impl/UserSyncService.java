@@ -171,7 +171,7 @@ public class UserSyncService {
         if (name != null && !name.isBlank()) {
             user.setFullName(name.trim());
         }
-        if (pictureUrl != null && !pictureUrl.isBlank()) {
+        if (shouldUpdateProfilePicture(user.getProfilePictureUrl(), pictureUrl)) {
             user.setProfilePictureUrl(pictureUrl);
         }
 
@@ -255,5 +255,20 @@ public class UserSyncService {
             }
         }
         return base + "_" + System.currentTimeMillis();
+    }
+
+    private boolean shouldUpdateProfilePicture(String currentPic, String newPic) {
+        if (newPic == null || newPic.isBlank()) {
+            return false;
+        }
+        if (currentPic == null || currentPic.isBlank()) {
+            return true;
+        }
+        // Se a foto atual do usuário contém "avatars/" (foto enviada pelo próprio usuário no Baggagi),
+        // não devemos sobrescrever com a foto do Google/redes sociais.
+        if (currentPic.contains("avatars/")) {
+            return false;
+        }
+        return true;
     }
 }

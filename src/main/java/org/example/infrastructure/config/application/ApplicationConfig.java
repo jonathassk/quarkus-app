@@ -156,9 +156,10 @@ public class ApplicationConfig {
             CreateUserUseCase createUserUseCase,
             LoginUserUseCase loginUserUseCase,
             UserRepository userRepository,
-            TokenService tokenService) {
+            TokenService tokenService,
+            ObjectStorageService objectStorageService) {
         return new UserController(
-                userDataVerification, createUserUseCase, loginUserUseCase, userRepository, tokenService);
+                userDataVerification, createUserUseCase, loginUserUseCase, userRepository, tokenService, objectStorageService);
     }
 
     @Produces

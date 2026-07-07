@@ -18,6 +18,7 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 
 import java.net.URI;
 import java.time.Duration;
@@ -45,9 +46,17 @@ public class ObjectStorageService {
     @ConfigProperty(name = "documents.presign.view.minutes", defaultValue = "30")
     int viewPresignMinutes;
 
-    private S3Presigner presigner;
-    private S3Client s3Client;
+    @ConfigProperty(name = "r2.public-url-prefix")
+    Optional<String> publicUrlPrefix;
+
+    private volatile S3Presigner presigner;
+    private volatile S3Client s3Client;
     private String bucketName;
+
+    // Stored for lazy client creation (SnapStart-safe: no network in @PostConstruct)
+    private String configuredEndpoint;
+    private String configuredKeyId;
+    private String configuredSecret;
 
     @PostConstruct
     void init() {
@@ -63,30 +72,54 @@ public class ObjectStorageService {
             return;
         }
 
-        String normalizedEndpoint = normalizeEndpoint(endpoint);
+        // Store config only — do NOT create S3Client/S3Presigner here.
+        // AWS SDK client construction may trigger network I/O (endpoint resolution, IMDS)
+        // which fails during SnapStart snapshot creation. Clients are built lazily on first use.
+        this.configuredEndpoint = normalizeEndpoint(endpoint);
+        this.configuredKeyId = keyId;
+        this.configuredSecret = secret;
+        log.info("R2 storage config ready (clients will be built lazily on first use — SnapStart-safe). bucket={} endpoint={}",
+                bucketName, this.configuredEndpoint);
+    }
 
-        S3Configuration s3Config = S3Configuration.builder()
-                .pathStyleAccessEnabled(true)
-                .chunkedEncodingEnabled(false)
-                .build();
-
+    /** Lazily builds and caches S3Client + S3Presigner on first use (after SnapStart restore). */
+    private synchronized void getOrInitClients() {
+        if (s3Client != null && presigner != null) {
+            return;
+        }
+        if (configuredEndpoint == null) {
+            return; // Not configured
+        }
         try {
-            var credentials = StaticCredentialsProvider.create(AwsBasicCredentials.create(keyId, secret));
+            // Force TLS 1.2 to avoid JVM TLS 1.3 handshake bugs with Cloudflare R2
+            System.setProperty("https.protocols", "TLSv1.2");
+            System.setProperty("jdk.tls.client.protocols", "TLSv1.2");
+            log.info("R2 lazy-initializing S3Client. TLS: https.protocols={}, jdk.tls.client.protocols={}",
+                    System.getProperty("https.protocols"),
+                    System.getProperty("jdk.tls.client.protocols"));
+
+            var credentials = StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(configuredKeyId, configuredSecret));
+            S3Configuration s3Config = S3Configuration.builder()
+                    .pathStyleAccessEnabled(true)
+                    .chunkedEncodingEnabled(false)
+                    .build();
             presigner = S3Presigner.builder()
                     .region(Region.US_EAST_1)
-                    .endpointOverride(URI.create(normalizedEndpoint))
+                    .endpointOverride(URI.create(configuredEndpoint))
                     .credentialsProvider(credentials)
                     .serviceConfiguration(s3Config)
                     .build();
             s3Client = S3Client.builder()
                     .region(Region.US_EAST_1)
-                    .endpointOverride(URI.create(normalizedEndpoint))
+                    .endpointOverride(URI.create(configuredEndpoint))
                     .credentialsProvider(credentials)
                     .serviceConfiguration(s3Config)
+                    .httpClientBuilder(UrlConnectionHttpClient.builder())
                     .build();
-            log.info("R2 storage ready bucket={} endpoint={}", bucketName, normalizedEndpoint);
-        } catch (Exception e) {
-            log.error("Failed to initialize R2 storage endpoint={}", normalizedEndpoint, e);
+            log.info("R2 storage ready bucket={} endpoint={}", bucketName, configuredEndpoint);
+        } catch (Throwable t) {
+            log.error("Failed to lazy-initialize R2 storage endpoint={}", configuredEndpoint, t);
             presigner = null;
             s3Client = null;
         }
@@ -112,7 +145,7 @@ public class ObjectStorageService {
     }
 
     public boolean isConfigured() {
-        return presigner != null && s3Client != null && bucketName != null;
+        return bucketName != null && configuredEndpoint != null;
     }
 
     /** Server-side upload (no browser CORS to R2). */
@@ -202,9 +235,27 @@ public class ObjectStorageService {
         }
     }
 
+    public String getPublicUrl(String s3Key) {
+        if (s3Key == null) {
+            return null;
+        }
+        String prefix = publicUrlPrefix.map(ObjectStorageService::normalizeConfigValue).orElse("");
+        if (prefix.isBlank()) {
+            return s3Key;
+        }
+        if (!prefix.endsWith("/")) {
+            prefix += "/";
+        }
+        return prefix + s3Key;
+    }
+
     private void ensureConfigured() {
         if (!isConfigured()) {
             throw new IllegalStateException("Object storage is not configured");
+        }
+        getOrInitClients();
+        if (s3Client == null || presigner == null) {
+            throw new IllegalStateException("Object storage failed to initialize — check R2 credentials and endpoint");
         }
     }
 }
