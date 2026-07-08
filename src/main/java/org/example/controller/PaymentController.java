@@ -36,7 +36,11 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
+import java.net.URI;
+import java.util.Arrays;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Tag(name = "Payments", description = "Integração com Stripe para pagamentos unitários de viagens e assinaturas de planos")
@@ -74,6 +78,9 @@ public class PaymentController {
     @ConfigProperty(name = "stripe.price.anual-agent")
     Optional<String> priceAnualAgent;
 
+    @ConfigProperty(name = "quarkus.http.cors.origins", defaultValue = "http://localhost:3000")
+    String corsOriginsConfig;
+
     @PostConstruct
     void init() {
         String key = apiKey.orElse("").trim();
@@ -98,6 +105,47 @@ public class PaymentController {
     private boolean isStripeConfigured() {
         return apiKey.isPresent() && !apiKey.get().isBlank() &&
                webhookSecret.isPresent() && !webhookSecret.get().isBlank();
+    }
+
+    private Set<String> allowedRedirectOrigins() {
+        return Arrays.stream(corsOriginsConfig.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .collect(Collectors.toSet());
+    }
+
+    private String resolveRedirectUrl(String requestedUrl, String fallbackUrl) {
+        if (requestedUrl == null || requestedUrl.isBlank()) {
+            return fallbackUrl;
+        }
+        try {
+            URI uri = URI.create(requestedUrl.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) {
+                return fallbackUrl;
+            }
+            if (!"https".equalsIgnoreCase(scheme)
+                    && !("http".equalsIgnoreCase(scheme) && "localhost".equalsIgnoreCase(host))) {
+                return fallbackUrl;
+            }
+
+            int port = uri.getPort();
+            String origin = port > 0 ? scheme + "://" + host + ":" + port : scheme + "://" + host;
+            if (!allowedRedirectOrigins().contains(origin)) {
+                log.warn("Rejected Stripe redirect URL with disallowed origin: {}", origin);
+                return fallbackUrl;
+            }
+
+            String path = uri.getPath();
+            if (path == null || path.isBlank()) {
+                return fallbackUrl;
+            }
+            return origin + path;
+        } catch (Exception e) {
+            log.warn("Invalid Stripe redirect URL: {}", requestedUrl, e);
+            return fallbackUrl;
+        }
     }
 
     private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
@@ -169,9 +217,12 @@ public class PaymentController {
         }
 
         try {
+            String resolvedSuccessUrl = resolveRedirectUrl(request.getSuccessUrl(), successUrl);
+            String resolvedCancelUrl = resolveRedirectUrl(request.getCancelUrl(), cancelUrl);
+
             SessionCreateParams.Builder paramsBuilder = SessionCreateParams.builder()
-                    .setSuccessUrl(successUrl + "?session_id={CHECKOUT_SESSION_ID}")
-                    .setCancelUrl(cancelUrl);
+                    .setSuccessUrl(resolvedSuccessUrl + "?session_id={CHECKOUT_SESSION_ID}")
+                    .setCancelUrl(resolvedCancelUrl);
 
             if ("UNITARIO".equals(request.getPaymentType())) {
                 paramsBuilder.setMode(SessionCreateParams.Mode.PAYMENT);

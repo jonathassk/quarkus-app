@@ -42,5 +42,9 @@ jobs:
         run: |
           sam deploy \
             --template target/sam.jvm.yaml \
+            --stack-name baggagi-back \
+            --capabilities CAPABILITY_IAM \
+            --region sa-east-1 \
+            --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
