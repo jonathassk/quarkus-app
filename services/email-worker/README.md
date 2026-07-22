@@ -10,6 +10,7 @@ Lambda dedicada para e-mails automáticos da Baggagi.
 | `document_expiry_reminders` | EventBridge / invoke | Alertas de documentos perto do vencimento |
 | `product_update` | Invoke manual | Broadcast para opt-in `emailUpdates` |
 | `send_direct` | Quarkus `POST /api/v1/trips/{id}/email` | E-mail pontual com resumo do roteiro (corpo já montado no front/Quarkus) |
+| `send_white_label` | Invoke (proposta / D-7 / pós-venda) | HTML com logo/cor da agência (`agencyId`); From SES continua Baggagi |
 
 Payloads:
 
@@ -32,8 +33,18 @@ Payloads:
   "textBody": "…",
   "htmlBody": "<p>…</p>"
 }
+
+{
+  "action": "send_white_label",
+  "toEmail": "cliente@email.com",
+  "agencyId": "uuid-da-agencia",
+  "templateKind": "proposal_sent",
+  "tripName": "Paris 7 dias",
+  "shareUrl": "https://baggagi.com/p/abc123"
+}
 ```
 
+`templateKind`: `proposal_sent` | `boarding_reminder` | `post_trip`.
 ## Preferências (Quarkus)
 
 `GET/PATCH /api/v1/users/me/email-preferences` — `emailUpdates`, `tripReminders`.

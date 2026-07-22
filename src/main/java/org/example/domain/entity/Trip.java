@@ -3,13 +3,14 @@ package org.example.domain.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.TripStatus;
-import org.example.domain.entity.Agency;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -87,6 +88,28 @@ public class Trip extends PanacheEntityBase {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agency_id")
     private Agency agency;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "proposal_status", length = 32, nullable = false)
+    @Builder.Default
+    private ProposalStatus proposalStatus = ProposalStatus.DRAFT;
+
+    @Column(name = "base_cost", precision = 12, scale = 2)
+    private BigDecimal baseCost;
+
+    @Column(name = "final_price", precision = 12, scale = 2)
+    private BigDecimal finalPrice;
+
+    /** Código opaco da proposta pública (/p/{shareCode}). */
+    @Column(name = "share_code", length = 64)
+    private String shareCode;
+
+    @Column(name = "last_contact_at")
+    private Instant lastContactAt;
+
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<TripProposalTier> proposalTiers = new ArrayList<>();
 
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

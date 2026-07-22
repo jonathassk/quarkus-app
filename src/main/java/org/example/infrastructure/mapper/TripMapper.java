@@ -53,6 +53,14 @@ public class TripMapper {
         if (trip.getWorkspace() != null) {
             dto.setWorkspaceId(trip.getWorkspace().id);
         }
+        if (trip.getAgency() != null) {
+            dto.setAgencyId(trip.getAgency().id);
+        }
+        dto.setProposalStatus(trip.getProposalStatus());
+        dto.setBaseCost(trip.getBaseCost());
+        dto.setFinalPrice(trip.getFinalPrice());
+        dto.setShareCode(trip.getShareCode());
+        dto.setCurrency(trip.getCurrency());
         if (collaborationService != null) {
             dto.setUsers(collaborationService.buildCollaboratorList(trip));
         }

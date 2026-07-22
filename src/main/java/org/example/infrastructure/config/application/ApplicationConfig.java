@@ -124,8 +124,16 @@ public class ApplicationConfig {
             TripService tripService,
             ActivityRepository activityRepository,
             MealRepository mealRepository,
-            org.example.application.services.chat.TripChatService tripChatService) {
-        return new CreateTripUseCaseimpl(tripRepository, userRepository, tripService, activityRepository, mealRepository, tripChatService);
+            org.example.application.services.chat.TripChatService tripChatService,
+            AgencyMemberRepository agencyMemberRepository) {
+        return new CreateTripUseCaseimpl(
+                tripRepository,
+                userRepository,
+                tripService,
+                activityRepository,
+                mealRepository,
+                tripChatService,
+                agencyMemberRepository);
     }
 
     @Produces

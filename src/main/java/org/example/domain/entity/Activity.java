@@ -48,6 +48,11 @@ public class Activity extends PanacheEntityBase {
     @Column(precision = 10, scale = 2)
     private BigDecimal cost;
 
+    /** Se true, o cliente pode incluir/excluir na proposta pública (passeio opcional). */
+    @Column(name = "is_optional", nullable = false)
+    @Builder.Default
+    private boolean optional = false;
+
     @Column(name = "start_time")
     private LocalTime startTime;
 

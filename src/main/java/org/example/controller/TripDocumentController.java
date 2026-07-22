@@ -20,6 +20,7 @@ import org.example.domain.entity.TripDocument;
 import org.example.domain.entity.User;
 import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentStatus;
+import org.example.domain.enums.DocumentVisibility;
 import org.example.domain.repository.TripDocumentRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
@@ -296,6 +297,7 @@ public class TripDocumentController {
                     .s3Key(s3Key)
                     .contentType(upload.contentType())
                     .status(DocumentStatus.PENDING)
+                    .visibility(resolveVisibility(req.getVisibility()))
                     .uploadedBy(uploader)
                     .build();
 
@@ -572,8 +574,19 @@ public class TripDocumentController {
                 .title(doc.getTitle())
                 .contentType(doc.getContentType())
                 .status(doc.getStatus().name())
+                .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : DocumentVisibility.CLIENT.name())
+                .activityId(doc.getActivity() != null ? doc.getActivity().id : null)
+                .segmentId(doc.getSegment() != null ? doc.getSegment().id : null)
                 .createdAt(doc.getCreatedAt() != null ? doc.getCreatedAt().toString() : null)
                 .build();
+    }
+
+    private static DocumentVisibility resolveVisibility(String raw) {
+        try {
+            return DocumentVisibility.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return DocumentVisibility.CLIENT;
+        }
     }
 
     private Response unauthorizedResponse() {

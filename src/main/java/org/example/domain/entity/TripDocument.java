@@ -4,6 +4,7 @@ import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.enums.DocumentStatus;
+import org.example.domain.enums.DocumentVisibility;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
@@ -40,6 +41,19 @@ public class TripDocument extends PanacheEntityBase {
     @Column(nullable = false, length = 32)
     @Builder.Default
     private DocumentStatus status = DocumentStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    @Builder.Default
+    private DocumentVisibility visibility = DocumentVisibility.CLIENT;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "activity_id")
+    private Activity activity;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "segment_id")
+    private TripSegment segment;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by")

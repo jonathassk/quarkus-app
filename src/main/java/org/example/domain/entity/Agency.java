@@ -58,6 +58,19 @@ public class Agency extends PanacheEntityBase {
     @Builder.Default
     private String planType = "B2B_FREE";
 
+    /** WhatsApp E.164 ou dígitos (ex.: 5511999999999) para CTA da proposta. */
+    @Column(name = "whatsapp_number", length = 32)
+    private String whatsappNumber;
+
+    /** Markup padrão (%) aplicado sobre o custo base das propostas. */
+    @Column(name = "markup_percentage", precision = 5, scale = 2, nullable = false)
+    @Builder.Default
+    private java.math.BigDecimal markupPercentage = java.math.BigDecimal.ZERO;
+
+    /** ID da assinatura Stripe vinculada a esta agência. */
+    @Column(name = "stripe_subscription_id", length = 255)
+    private String stripeSubscriptionId;
+
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 

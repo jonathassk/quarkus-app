@@ -30,6 +30,7 @@ import org.example.domain.entity.WorkspaceMember;
 import org.example.domain.enums.UserType;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
+import org.example.application.services.agency.AgencyService;
 import org.example.utils.RequestAuthHeaders;
 
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -58,6 +59,7 @@ public class PaymentController {
     private final UserRepository userRepository;
     private final TripRepository tripRepository;
     private final TokenService tokenService;
+    private final AgencyService agencyService;
 
     @ConfigProperty(name = "stripe.api.key")
     Optional<String> apiKey;
@@ -328,8 +330,9 @@ public class PaymentController {
                     if (session != null) {
                         String targetIdStr = session.getMetadata().get("targetId");
                         String paymentType = session.getMetadata().get("paymentType");
+                        String subscriptionId = session.getSubscription();
                         if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType);
+                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId);
                         }
                     }
                     break;
@@ -341,7 +344,7 @@ public class PaymentController {
                         String targetIdStr = sub.getMetadata().get("targetId");
                         String paymentType = sub.getMetadata().get("paymentType");
                         if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType);
+                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, sub.getId());
                         }
                     }
                     break;
@@ -372,7 +375,13 @@ public class PaymentController {
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType) {
-        log.info("Processing successful payment: targetId={}, paymentType={}", targetId, paymentType);
+        processSuccessfulPayment(targetId, paymentType, null);
+    }
+
+    @Transactional
+    public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId) {
+        log.info("Processing successful payment: targetId={}, paymentType={}, sub={}",
+                targetId, paymentType, stripeSubscriptionId);
         if ("MENSAL".equals(paymentType) || "ANUAL".equals(paymentType)) {
             Workspace workspace = Workspace.findById(targetId);
             if (workspace != null) {
@@ -387,12 +396,35 @@ public class PaymentController {
                 workspace.setPlanType("B2B_PRO");
                 workspace.persist();
                 upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
+                activateAgencyForWorkspaceOwner(workspace, stripeSubscriptionId);
                 log.info("Workspace {} updated to B2B_PRO", targetId);
             }
         } else if ("UNITARIO".equals(paymentType)) {
             log.info("Single trip payment verified for Trip ID: {}", targetId);
-            // Implementação futura caso precise de colunas extras ou liberação específica na Trip
         }
+    }
+
+    /**
+     * Garante Agency B2B_PRO + membership OWNER para o dono do workspace.
+     */
+    private void activateAgencyForWorkspaceOwner(Workspace workspace, String stripeSubscriptionId) {
+        WorkspaceMember ownerMember = WorkspaceMember
+                .find("workspace.id = ?1 and role = ?2", workspace.id, org.example.domain.enums.WorkspaceRole.OWNER)
+                .firstResult();
+        if (ownerMember == null) {
+            ownerMember = WorkspaceMember.find("workspace.id", workspace.id).firstResult();
+        }
+        if (ownerMember == null || ownerMember.getUser() == null) {
+            log.warn("No workspace member to attach Agency for workspace={}", workspace.id);
+            return;
+        }
+        User owner = ownerMember.getUser();
+        String agencyName = workspace.getName() != null && !workspace.getName().isBlank()
+                ? workspace.getName()
+                : (owner.getFullName() != null ? owner.getFullName() : "Agência");
+        var agency = agencyService.ensureAgencyForOwner(owner, agencyName);
+        agencyService.activateSubscription(agency, stripeSubscriptionId);
+        log.info("Agency {} activated as B2B_PRO for user {}", agency.id, owner.id);
     }
 
     /**
@@ -419,6 +451,12 @@ public class PaymentController {
             workspace.setPlanType("FREE");
             workspace.persist();
             log.info("Workspace {} downgraded to FREE", targetId);
+
+            WorkspaceMember ownerMember = WorkspaceMember.find("workspace.id", workspace.id).firstResult();
+            if (ownerMember != null && ownerMember.getUser() != null) {
+                agencyService.requireMembership(ownerMember.getUser().id).ifPresent(m ->
+                        agencyService.downgradeSubscription(m.getAgency()));
+            }
         }
     }
 

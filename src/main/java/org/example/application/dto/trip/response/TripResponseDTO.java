@@ -5,6 +5,7 @@ import java.util.UUID;
 import lombok.*;
 import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.TripUserDTO;
+import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.TripStatus;
 
 import java.math.BigDecimal;
@@ -33,4 +34,10 @@ public class TripResponseDTO {
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;
     private UUID createdBy;
+    private UUID agencyId;
+    private ProposalStatus proposalStatus;
+    private BigDecimal baseCost;
+    private BigDecimal finalPrice;
+    private String shareCode;
+    private String currency;
 }

@@ -28,5 +28,7 @@ public class ActivityDTO {
     /** Longitude WGS84 (ex.: 2.3376) para mapas */
     private Double longitude;
     private BigDecimal cost;
+    @Builder.Default
+    private boolean optional = false;
     private String notes;
 }

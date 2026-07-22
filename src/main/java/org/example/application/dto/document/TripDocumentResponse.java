@@ -13,5 +13,8 @@ public class TripDocumentResponse {
     private String title;
     private String contentType;
     private String status;
+    private String visibility;
+    private UUID activityId;
+    private UUID segmentId;
     private String createdAt;
 }

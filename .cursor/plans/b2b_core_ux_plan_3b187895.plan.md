@@ -4,31 +4,31 @@ overview: Plano de execução para Core UX (espera útil de geração) e MVP B2B
 todos:
   - id: sprint1-migration
     content: "V6 Flyway: agencies (whatsapp, markup, stripe_sub) + trips (proposal_status, base_cost, final_price, share_code) + trip_proposal_tiers"
-    status: pending
+    status: completed
   - id: sprint1-agency-api
     content: "AgencyController: GET/PATCH me + logo presign/confirm R2; CreateTrip associa agency + share_code"
-    status: pending
+    status: completed
   - id: sprint1-public-proposal
     content: PublicProposalController GET/approve + DTOs branding; pricing/tiers no editor autenticado
-    status: pending
+    status: completed
   - id: sprint1-stripe-agency
     content: Webhook Stripe sincroniza Agency.planType e stripe_subscription_id para planos Agent
-    status: pending
+    status: completed
   - id: sprint1-front-ux
     content: "Repo Next.js: workspace /create + /settings/agency + /p/[shareCode] + slider markup + pricing"
-    status: pending
+    status: completed
   - id: sprint1-ai-lambda
     content: "Repo Lambda IA: Gemini 3.5 Flash + collectLocationInfo rico para abas da espera útil"
-    status: pending
+    status: completed
   - id: fase2-crm
     content: Kanban pipeline, team permissions UI, audit read API, document visibility CLIENT/INTERNAL
-    status: pending
+    status: completed
   - id: fase3-retention
     content: email-worker white-label templates + BI analytics dashboard
-    status: pending
+    status: completed
   - id: fase4-enterprise
     content: "Backlog: co-browse WS, OCR WhatsApp, flight guardian HITL, Stripe Connect"
-    status: pending
+    status: completed
 isProject: false
 ---
 

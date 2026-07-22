@@ -19,14 +19,19 @@ import (
 //	{"action":"document_expiry_reminders"}
 //	{"action":"product_update","subject":"...","textBody":"...","htmlBody":"...","broadcastId":"...","dryRun":false}
 //	{"action":"send_direct","toEmail":"...","subject":"...","textBody":"...","htmlBody":"..."}
+//	{"action":"send_white_label","toEmail":"...","agencyId":"...","templateKind":"proposal_sent","tripName":"...","shareUrl":"..."}
 type Event struct {
-	Action      string `json:"action"`
-	ToEmail     string `json:"toEmail"`
-	Subject     string `json:"subject"`
-	TextBody    string `json:"textBody"`
-	HTMLBody    string `json:"htmlBody"`
-	BroadcastID string `json:"broadcastId"`
-	DryRun      bool   `json:"dryRun"`
+	Action       string `json:"action"`
+	ToEmail      string `json:"toEmail"`
+	Subject      string `json:"subject"`
+	TextBody     string `json:"textBody"`
+	HTMLBody     string `json:"htmlBody"`
+	BroadcastID  string `json:"broadcastId"`
+	DryRun       bool   `json:"dryRun"`
+	AgencyID     string `json:"agencyId"`
+	TemplateKind string `json:"templateKind"`
+	TripName     string `json:"tripName"`
+	ShareURL     string `json:"shareUrl"`
 }
 
 func main() {
@@ -87,6 +92,17 @@ func main() {
 				Subject:  ev.Subject,
 				TextBody: ev.TextBody,
 				HTMLBody: ev.HTMLBody,
+			})
+		case "send_white_label":
+			return runner.SendWhiteLabel(ctx, jobs.WhiteLabelEmailInput{
+				ToEmail:      ev.ToEmail,
+				Subject:      ev.Subject,
+				TextBody:     ev.TextBody,
+				HTMLBody:     ev.HTMLBody,
+				AgencyID:     ev.AgencyID,
+				TemplateKind: ev.TemplateKind,
+				TripName:     ev.TripName,
+				ShareURL:     ev.ShareURL,
 			})
 		default:
 			return jobs.Result{Action: ev.Action}, jsonError("unknown action: " + ev.Action)

@@ -45,4 +45,11 @@ public enum B2bTripLogAction {
 
     // ── Operações financeiras ─────────────────────────────────────────────────
     BUDGET_UPDATED,
+
+    // ── Proposta interativa ───────────────────────────────────────────────────
+    PROPOSAL_SENT,
+    PROPOSAL_APPROVED,
+    PROPOSAL_REJECTED,
+    PROPOSAL_PRICING_UPDATED,
+    PROPOSAL_TIERS_UPDATED,
 }

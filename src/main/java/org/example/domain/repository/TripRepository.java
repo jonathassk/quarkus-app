@@ -156,4 +156,19 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
         }
         return new java.util.ArrayList<>(memberIds);
     }
+
+    public Optional<Trip> findByShareCode(String shareCode) {
+        if (shareCode == null || shareCode.isBlank()) {
+            return Optional.empty();
+        }
+        return find("shareCode", shareCode.trim()).firstResultOptional();
+    }
+
+    public List<Trip> findByAgencyId(UUID agencyId) {
+        return list("agency.id = ?1 ORDER BY updatedAt DESC", agencyId);
+    }
+
+    public List<Trip> findByAgencyIdAndProposalStatus(UUID agencyId, org.example.domain.enums.ProposalStatus status) {
+        return list("agency.id = ?1 AND proposalStatus = ?2 ORDER BY updatedAt DESC", agencyId, status);
+    }
 }

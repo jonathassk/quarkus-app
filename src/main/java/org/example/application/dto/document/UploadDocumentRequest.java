@@ -10,4 +10,8 @@ public class UploadDocumentRequest {
     private String contentType;
     /** Optional display title; defaults to fileName */
     private String title;
+    /** CLIENT (default) or INTERNAL — agency vouchers. */
+    private String visibility;
+    private java.util.UUID activityId;
+    private java.util.UUID segmentId;
 }

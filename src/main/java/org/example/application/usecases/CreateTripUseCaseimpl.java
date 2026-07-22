@@ -32,6 +32,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
     private final ActivityRepository activityRepository;
     private final MealRepository mealRepository;
     private final TripChatService tripChatService;
+    private final AgencyMemberRepository agencyMemberRepository;
 
     @Override
     public Trip createTrip(TripRequestDTO tripRequest) {
@@ -44,6 +45,18 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
             throw new NotFoundException("User not found");
         }
         trip.setCreatedBy(creator);
+
+        agencyMemberRepository.findPrimaryAgencyForUser(creator.id).ifPresent(agency -> {
+            trip.setAgency(agency);
+            trip.setShareCode(org.example.application.services.proposal.ProposalService.generateShareCode());
+            trip.setProposalStatus(org.example.domain.enums.ProposalStatus.DRAFT);
+            if (agency.getMarkupPercentage() != null
+                    && trip.getBaseCost() == null
+                    && tripRequest.getBudgetTotal() != null) {
+                // leave pricing to explicit PATCH /pricing; share_code is enough for now
+            }
+            log.info("Create trip linked to agency id={} shareCode={}", agency.id, trip.getShareCode());
+        });
 
         UUID workspaceId = tripRequest.getWorkspaceId();
         Workspace workspace = null;
@@ -131,6 +144,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
                         activity.setDayNumber(activityDTO.getDayNumber());
                         activity.setCost(activityDTO.getCost());
                         activity.setNotes(activityDTO.getNotes());
+                        activity.setOptional(activityDTO.isOptional());
                         activity.setSegment(segment);
                         activities.add(activity);
                     }
