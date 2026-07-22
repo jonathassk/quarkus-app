@@ -18,12 +18,20 @@ import org.example.application.usecases.interfaces.CreateUserUseCase;
 import org.example.application.usecases.interfaces.LoginUserUseCase;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.controller.AuthController;
+import org.example.controller.EmailPreferencesController;
 import org.example.controller.TripController;
 import org.example.controller.TripChecklistController;
 import org.example.controller.TripDocumentController;
 import org.example.controller.TripShareController;
+import org.example.controller.ChatController;
+import org.example.controller.ChatPrivacyController;
+import org.example.controller.TripChatController;
+import org.example.controller.EventController;
+import org.example.controller.EventChatController;
+import org.example.controller.EventPostController;
 import org.example.controller.UserController;
 import org.example.application.services.AuthSessionService;
+import org.example.application.services.email.EmailPreferencesService;
 import org.example.application.services.impl.UserSyncService;
 import org.example.application.services.TripCollaborationService;
 import org.example.infrastructure.storage.ObjectStorageService;
@@ -103,8 +111,9 @@ public class ApplicationConfig {
     public UpdateTripUseCase updateTripUseCase(
             TripRepository tripRepository,
             UserRepository userRepository,
-            TripService tripService) {
-        return new UpdateTripUseCaseImpl(tripRepository, userRepository, tripService);
+            TripService tripService,
+            org.example.application.services.chat.TripChatService tripChatService) {
+        return new UpdateTripUseCaseImpl(tripRepository, userRepository, tripService, tripChatService);
     }
 
     @Produces
@@ -114,8 +123,9 @@ public class ApplicationConfig {
             UserRepository userRepository,
             TripService tripService,
             ActivityRepository activityRepository,
-            MealRepository mealRepository) {
-        return new CreateTripUseCaseimpl(tripRepository, userRepository, tripService, activityRepository, mealRepository);
+            MealRepository mealRepository,
+            org.example.application.services.chat.TripChatService tripChatService) {
+        return new CreateTripUseCaseimpl(tripRepository, userRepository, tripService, activityRepository, mealRepository, tripChatService);
     }
 
     @Produces
@@ -176,6 +186,15 @@ public class ApplicationConfig {
 
     @Produces
     @ApplicationScoped
+    public EmailPreferencesController emailPreferencesController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            EmailPreferencesService emailPreferencesService) {
+        return new EmailPreferencesController(tokenService, userRepository, emailPreferencesService);
+    }
+
+    @Produces
+    @ApplicationScoped
     public TripDocumentController tripDocumentController(
             TripRepository tripRepository,
             TripDocumentRepository tripDocumentRepository,
@@ -214,5 +233,65 @@ public class ApplicationConfig {
             B2bAuditService auditService) {
         return new TripShareController(
                 tripRepository, userRepository, tokenService, tripCollaborationService, auditService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public ChatController chatController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            org.example.application.services.chat.InboxService inboxService,
+            org.example.application.services.chat.MessageService messageService,
+            org.example.application.services.chat.DirectChatService directChatService,
+            org.example.application.services.chat.ChatWsTokenService chatWsTokenService) {
+        return new ChatController(
+                tokenService, userRepository, inboxService, messageService, directChatService, chatWsTokenService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public TripChatController tripChatController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            org.example.application.services.chat.TripChatService tripChatService) {
+        return new TripChatController(tokenService, userRepository, tripChatService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public ChatPrivacyController chatPrivacyController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            org.example.application.services.chat.DirectChatService directChatService,
+            org.example.application.services.chat.PrivacyService privacyService) {
+        return new ChatPrivacyController(tokenService, userRepository, directChatService, privacyService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public EventController eventController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            org.example.application.services.event.EventService eventService,
+            org.example.application.services.event.EventParticipantService participantService) {
+        return new EventController(tokenService, userRepository, eventService, participantService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public EventPostController eventPostController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            org.example.application.services.event.EventPostService eventPostService) {
+        return new EventPostController(tokenService, userRepository, eventPostService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public EventChatController eventChatController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            org.example.application.services.event.EventChatService eventChatService) {
+        return new EventChatController(tokenService, userRepository, eventChatService);
     }
 } 

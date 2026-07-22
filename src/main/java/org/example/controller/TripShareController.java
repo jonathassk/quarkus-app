@@ -1,5 +1,7 @@
 package org.example.controller;
 
+import java.util.UUID;
+
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
@@ -59,10 +61,10 @@ public class TripShareController {
         @APIResponse(responseCode = "404", description = "Viagem ou usuário não encontrados")
     })
     public Response shareTrip(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             @RequestBody(description = "Lista de usuários e nível de permissão", required = true) ShareTripRequestDTO request,
             @Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return unauthorized();
         }
@@ -106,10 +108,10 @@ public class TripShareController {
         @APIResponse(responseCode = "404", description = "Viagem ou colaborador não encontrados")
     })
     public Response removeCollaborator(
-            @PathParam("tripId") Long tripId,
-            @PathParam("userId") Long memberUserId,
+            @PathParam("tripId") UUID tripId,
+            @PathParam("userId") UUID memberUserId,
             @Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return unauthorized();
         }
@@ -152,11 +154,11 @@ public class TripShareController {
         @APIResponse(responseCode = "404", description = "Viagem ou colaborador não encontrados")
     })
     public Response updateCollaboratorPermission(
-            @PathParam("tripId") Long tripId,
-            @PathParam("userId") Long memberUserId,
+            @PathParam("tripId") UUID tripId,
+            @PathParam("userId") UUID memberUserId,
             @RequestBody(description = "Nova permissão", required = true) UpdateSharePermissionDTO body,
             @Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return unauthorized();
         }
@@ -192,7 +194,7 @@ public class TripShareController {
         return TripMapper.mapToTripResponseDTO(fresh != null ? fresh : trip, tripCollaborationService);
     }
 
-    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+    private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
         String bearerLine =
                 headers != null
                         ? RequestAuthHeaders.resolveBearerHeaderLine(
@@ -204,7 +206,7 @@ public class TripShareController {
         }
         try {
             String token = bearerLine.substring("Bearer ".length()).trim();
-            Long userId = Long.valueOf(tokenService.validateToken(token));
+            UUID userId = UUID.fromString(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 return Optional.empty();
             }

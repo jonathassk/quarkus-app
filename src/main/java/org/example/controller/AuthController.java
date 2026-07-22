@@ -1,5 +1,7 @@
 package org.example.controller;
 
+import java.util.UUID;
+
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -108,7 +110,7 @@ public class AuthController {
 
         try {
             String userIdStr = tokenService.validateToken(token);
-            Long userId = Long.valueOf(userIdStr);
+            UUID userId = UUID.fromString(userIdStr);
 
             User user = userRepository.findById(userId);
             if (user == null) {
@@ -173,10 +175,7 @@ public class AuthController {
         }
         try {
             String token = magicLinkService.generateMagicLinkToken(body.getEmail(), body.getTripId());
-
-            // TODO: Integrar com provedor de e-mail (ex.: Resend, SendGrid, AWS SES).
-            // O link a ser enviado deve ser: https://baggagi.com/magic?token=<token>
-            // Por enquanto, logamos o token em nível INFO para testes locais.
+            // Envio de e-mail: Lambda Go (email-worker). Em dev, log do token.
             log.info("[MAGIC_LINK_DEV] token para email={} tripId={}: {}", body.getEmail(), body.getTripId(), token);
 
             // Retorna 200 mesmo em caso de e-mail não vinculado para evitar enumeração
@@ -266,7 +265,7 @@ public class AuthController {
     @Data
     public static class MagicLinkRequestDTO {
         private String email;
-        private Long tripId;
+        private UUID tripId;
     }
 
     @Data

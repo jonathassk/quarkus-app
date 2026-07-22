@@ -1,21 +1,13 @@
--- Neon Auth: coluna de vínculo com o JWT (auth_user_id = sub/id do Neon Auth)
--- Espelha db/migration/V7__neon_auth_user_id.sql
+-- Neon Auth: coluna de vínculo com o JWT (auth_user_id = sub/id do Neon Auth).
+-- Espelha db/migration/V1__baseline_uuid_schema.sql (seção users).
+--
+-- NOTA: o schema foi migrado para UUID. A coluna auth_user_id continua sendo um
+-- VARCHAR(128) (o `sub` do JWT do Neon Auth é uma string), portanto seu tipo NÃO
+-- mudou. A lógica histórica de renomear `cognito_sub` → `auth_user_id` tornou-se
+-- obsoleta (projeto pré-lançamento, schema recriado do zero) e foi removida.
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'users' AND column_name = 'cognito_sub'
-    ) AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'users' AND column_name = 'auth_user_id'
-    ) THEN
-        ALTER TABLE users RENAME COLUMN cognito_sub TO auth_user_id;
-    END IF;
-END $$;
-
+-- Garante a coluna e o índice único parcial (caso precise aplicar isoladamente).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_user_id VARCHAR(128);
 
-DROP INDEX IF EXISTS uk_users_cognito_sub;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_users_auth_user_id
     ON users (auth_user_id) WHERE auth_user_id IS NOT NULL;

@@ -1,5 +1,7 @@
 package org.example.application.dto.trip;
 
+import java.util.UUID;
+
 import lombok.*;
 import org.example.domain.enums.UserPermissionLevel;
 
@@ -9,7 +11,7 @@ import org.example.domain.enums.UserPermissionLevel;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TripUserDTO {
-    private Long userId;
+    private UUID userId;
     private String email;
     private String fullName;
     private UserPermissionLevel permissionLevel;

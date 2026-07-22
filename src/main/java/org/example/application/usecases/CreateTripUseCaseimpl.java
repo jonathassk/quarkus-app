@@ -1,5 +1,7 @@
 package org.example.application.usecases;
 
+import java.util.UUID;
+
 import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +11,7 @@ import org.example.application.dto.trip.ActivityDTO;
 import org.example.application.dto.trip.MealDTO;
 import org.example.application.dto.trip.TripUserDTO;
 import org.example.application.services.TripService;
+import org.example.application.services.chat.TripChatService;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.domain.entity.*;
 import org.example.domain.repository.*;
@@ -28,6 +31,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
     private final TripService tripService;
     private final ActivityRepository activityRepository;
     private final MealRepository mealRepository;
+    private final TripChatService tripChatService;
 
     @Override
     public Trip createTrip(TripRequestDTO tripRequest) {
@@ -41,7 +45,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
         }
         trip.setCreatedBy(creator);
 
-        Long workspaceId = tripRequest.getWorkspaceId();
+        UUID workspaceId = tripRequest.getWorkspaceId();
         Workspace workspace = null;
         if (workspaceId != null) {
             workspace = Workspace.findById(workspaceId);
@@ -166,6 +170,7 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
         trip.setUsers(tripUsers);
 
         tripRepository.persist(trip);
+        tripChatService.ensureConversationIfEligible(trip.id);
         return trip;
     }
 }

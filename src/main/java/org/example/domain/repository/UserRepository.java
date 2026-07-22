@@ -1,13 +1,16 @@
 package org.example.domain.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepository;
+import java.util.UUID;
+
+import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+
 import org.example.domain.entity.User;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-public class UserRepository implements PanacheRepository<User> {
+public class UserRepository implements PanacheRepositoryBase<User, UUID> {
 
     public Optional<User> findByEmail(String email) {
         if (email == null || email.isBlank()) {
@@ -45,7 +48,7 @@ public class UserRepository implements PanacheRepository<User> {
     /**
      * Search registered users by email, full name or username (for trip invites).
      */
-    public List<User> searchForInvite(String query, Long excludeUserId, int maxResults) {
+    public List<User> searchForInvite(String query, UUID excludeUserId, int maxResults) {
         if (query == null || query.trim().length() < 2) {
             return List.of();
         }
@@ -56,7 +59,7 @@ public class UserRepository implements PanacheRepository<User> {
                                 + "LOWER(u.email) LIKE :q OR LOWER(u.fullName) LIKE :q "
                                 + "OR LOWER(u.username) LIKE :q) ORDER BY u.fullName",
                         User.class)
-                .setParameter("exclude", excludeUserId != null ? excludeUserId : -1L)
+                .setParameter("exclude", excludeUserId != null ? excludeUserId : new UUID(0L, 0L))
                 .setParameter("q", pattern)
                 .setMaxResults(maxResults)
                 .getResultList();

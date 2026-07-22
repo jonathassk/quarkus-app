@@ -1,11 +1,13 @@
 package org.example.domain.entity;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntity;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.enums.AgencyRole;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Vínculo entre um User e uma Agency, com papel definido por {@link AgencyRole}.
@@ -27,7 +29,12 @@ import java.time.Instant;
         @UniqueConstraint(name = "uk_agency_user", columnNames = {"agency_id", "user_id"})
     }
 )
-public class AgencyMember extends PanacheEntity {
+public class AgencyMember extends PanacheEntityBase {
+
+    @Id
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Column(columnDefinition = "uuid")
+    public UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agency_id", nullable = false)

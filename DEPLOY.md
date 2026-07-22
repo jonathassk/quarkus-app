@@ -1,5 +1,35 @@
 # Deploy da aplicação no AWS Lambda
 
+## ⚠️ Migrations do banco (leia antes de deployar)
+
+O `SnapStartFlywayMigrator` roda `flyway.migrate()` dentro do hook `afterRestore` do
+SnapStart, que tem um **limite rígido de ~10s**. Migrations **pesadas** (ex.: o baseline
+UUID, que leva ~12s) **estouram esse limite** e o restore entra em **loop de timeout** — o
+schema nunca é criado (sintoma: banco só com a tabela `flyway_schema_history` vazia).
+
+**Solução:** aplique as migrations **fora da Lambda** antes do deploy. Há scripts prontos:
+
+```bash
+# Aplica todas as migrations pendentes no Neon (prod por padrão)
+./scripts/db-migrate.sh                 # = migrate prod
+./scripts/db-migrate.sh info            # estado das migrations (prod)
+./scripts/db-migrate.sh migrate dev     # migrate no ambiente dev
+./scripts/db-migrate.sh validate prod   # valida checksums
+
+# Deploy completo e seguro: migrate -> package -> sam deploy
+./scripts/deploy.sh prod                # confirma o changeset
+./scripts/deploy.sh prod --yes          # sem confirmação interativa
+./scripts/deploy.sh dev
+```
+
+- A senha do banco é lida do **AWS Secrets Manager** (`baggagi/back/<env>`), nunca fica hardcoded.
+- O `db-migrate.sh` usa o profile Maven `-Pflyway` com o **mesmo Flyway do Quarkus (11.9.2)**,
+  então o checksum registrado bate na validação que a Lambda faz no restore.
+- Depois de aplicadas por fora, o `afterRestore` da Lambda só **valida** (rápido) e nunca mais
+  dá timeout. Migrations leves ainda são aplicadas automaticamente pela Lambda como fallback.
+- **Sempre** que criar uma migration nova pesada, rode `./scripts/db-migrate.sh` (ou use
+  `./scripts/deploy.sh`, que já faz isso) **antes** de subir a Lambda.
+
 ## Pré-requisitos
 
 - **AWS CLI** instalado e configurado (`aws configure` com suas credenciais)
@@ -340,6 +370,36 @@ Após alterar env vars: `mvn package -DskipTests` e `sam deploy`.
 ```
 
 3. Salve e teste de novo o upload (hard refresh se necessário).
+
+### Erro 500 `Unable to execute HTTP request: (handshake_failure) Received fatal alert`
+
+**Sintoma:** upload retorna **500** (não 400), e o log da Lambda mostra `code: "INTERNAL_ERROR"`,
+`Failed to store document: Unable to execute HTTP request: (handshake_failure) Received fatal alert`.
+
+**Causa:** a JVM negocia TLS 1.3 por padrão com o endpoint `*.r2.cloudflarestorage.com`, e essa
+combinação específica de JDK + Cloudflare R2 falha o handshake. O código já tenta fixar TLS 1.2 via
+`System.setProperty` em `ObjectStorageService`, mas isso **não tem efeito** — a JVM lê
+`jdk.tls.client.protocols`/`https.protocols` e cacheia o provider TLS na primeira classe SSL tocada
+(ex.: a chamada HTTPS ao JWKS do Neon Auth, que acontece antes, na autenticação da requisição), então
+setar a propriedade depois, em runtime, é tarde demais.
+
+**Correção (já aplicada no `pom.xml`):** o pin de TLS 1.2 precisa vir via `JAVA_TOOL_OPTIONS`, que é
+lido pela JVM **no boot**, antes de qualquer classe SSL carregar:
+
+```
+JAVA_TOOL_OPTIONS: -Djava.net.preferIPv4Stack=true -Dhttps.protocols=TLSv1.2 -Djdk.tls.client.protocols=TLSv1.2
+```
+
+Depois de puxar essa mudança, é preciso **redeployar**:
+
+```bash
+mvn package -DskipTests
+sam deploy -t target/sam.jvm.yaml
+```
+
+Se `JAVA_TOOL_OPTIONS` já foi editada manualmente no Console AWS (Lambda → Configuration →
+Environment variables) com um valor diferente, atualize-a lá também (ou remova a edição manual para
+o próximo deploy reaplicar o valor do template).
 
 **URL com `%20` no nome do bucket** (ex.: `.../r2.cloudflarestorage.com/%20meu-bucket/...`): `R2_BUCKET_NAME` na Lambda provavelmente tem espaço no início/fim. Corrija para o nome exato do bucket (sem aspas extras no console AWS/Lambda). O código faz `trim` no nome ao subir.
 

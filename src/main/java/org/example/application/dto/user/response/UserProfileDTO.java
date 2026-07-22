@@ -1,5 +1,7 @@
 package org.example.application.dto.user.response;
 
+import java.util.UUID;
+
 import lombok.*;
 import java.time.Instant;
 
@@ -8,7 +10,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserProfileDTO {
-    private Long id;
+    private UUID id;
     private String email;
     private String username;
     private String fullName;

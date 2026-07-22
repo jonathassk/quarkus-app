@@ -1,5 +1,7 @@
 package org.example.application.services;
 
+import java.util.UUID;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
@@ -17,6 +19,7 @@ import org.example.domain.entity.User;
 import org.example.domain.enums.UserPermissionLevel;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
+import org.example.application.services.chat.TripChatService;
 import org.example.infrastructure.mapper.TripMapper;
 
 import java.time.Instant;
@@ -31,8 +34,9 @@ public class TripCollaborationService {
 
     private final TripRepository tripRepository;
     private final UserRepository userRepository;
+    private final TripChatService tripChatService;
 
-    public UserPermissionLevel resolvePermission(Trip trip, Long userId) {
+    public UserPermissionLevel resolvePermission(Trip trip, UUID userId) {
         if (trip.getCreatedBy() != null && trip.getCreatedBy().id.equals(userId)) {
             return UserPermissionLevel.OWNER;
         }
@@ -42,13 +46,13 @@ public class TripCollaborationService {
                 .orElse(null);
     }
 
-    public void requireMember(Trip trip, Long userId) {
+    public void requireMember(Trip trip, UUID userId) {
         if (!tripRepository.isUserLinkedToTrip(trip.id, userId)) {
             throw new ForbiddenException("You do not have access to this trip");
         }
     }
 
-    public void requireCanManageMembers(Trip trip, Long actorId) {
+    public void requireCanManageMembers(Trip trip, UUID actorId) {
         requireMember(trip, actorId);
         UserPermissionLevel level = resolvePermission(trip, actorId);
         if (level == null || !level.canManageUsers()) {
@@ -56,7 +60,7 @@ public class TripCollaborationService {
         }
     }
 
-    public void requireCanEdit(Trip trip, Long actorId) {
+    public void requireCanEdit(Trip trip, UUID actorId) {
         requireMember(trip, actorId);
         UserPermissionLevel level = resolvePermission(trip, actorId);
         if (level == null || !level.canEdit()) {
@@ -65,7 +69,7 @@ public class TripCollaborationService {
     }
 
     @Transactional
-    public Trip shareTrip(Long tripId, Long actorId, ShareTripRequestDTO request) {
+    public Trip shareTrip(UUID tripId, UUID actorId, ShareTripRequestDTO request) {
         Trip trip = tripRepository.findByIdWithLock(tripId);
         if (trip == null) {
             throw new NotFoundException("Trip not found");
@@ -81,10 +85,12 @@ public class TripCollaborationService {
         }
 
         trip.setUpdatedAt(Instant.now());
-        return tripRepository.updateTrip(trip);
+        Trip updated = tripRepository.updateTrip(trip);
+        tripChatService.ensureConversationIfEligible(tripId);
+        return updated;
     }
 
-    private void inviteOne(Trip trip, Long actorId, ShareTripUserItemDTO item) {
+    private void inviteOne(Trip trip, UUID actorId, ShareTripUserItemDTO item) {
         User invitee = resolveInvitee(item);
         if (invitee.id.equals(actorId)) {
             throw new BadRequestException("You cannot invite yourself");
@@ -136,7 +142,7 @@ public class TripCollaborationService {
     }
 
     @Transactional
-    public Trip removeMember(Long tripId, Long actorId, Long memberUserId) {
+    public Trip removeMember(UUID tripId, UUID actorId, UUID memberUserId) {
         Trip trip = tripRepository.findByIdWithLock(tripId);
         if (trip == null) {
             throw new NotFoundException("Trip not found");
@@ -153,12 +159,14 @@ public class TripCollaborationService {
         }
 
         trip.setUpdatedAt(Instant.now());
-        return tripRepository.updateTrip(trip);
+        Trip updated = tripRepository.updateTrip(trip);
+        tripChatService.onMemberRemoved(tripId, memberUserId);
+        return updated;
     }
 
     @Transactional
     public Trip updateMemberPermission(
-            Long tripId, Long actorId, Long memberUserId, UpdateSharePermissionDTO body) {
+            UUID tripId, UUID actorId, UUID memberUserId, UpdateSharePermissionDTO body) {
         Trip trip = tripRepository.findByIdWithLock(tripId);
         if (trip == null) {
             throw new NotFoundException("Trip not found");

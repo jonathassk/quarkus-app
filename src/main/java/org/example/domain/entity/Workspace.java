@@ -1,10 +1,12 @@
 package org.example.domain.entity;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntity;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -13,7 +15,13 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "workspaces")
-public class Workspace extends PanacheEntity {
+public class Workspace extends PanacheEntityBase {
+
+    @Id
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Column(columnDefinition = "uuid")
+    public UUID id;
+
     @Column(nullable = false, length = 255)
     private String name;
 

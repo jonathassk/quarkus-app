@@ -1,5 +1,7 @@
 package org.example.application.dto.trip.response;
 
+import java.util.UUID;
+
 import lombok.*;
 import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.TripUserDTO;
@@ -15,7 +17,7 @@ import java.util.List;
 @AllArgsConstructor
 @Getter
 public class TripResponseDTO {
-    private Long id;
+    private UUID id;
     /** Derived from {@code startDate}/{@code endDate} and today (PLANNING / ONGOING / COMPLETED). */
     private TripStatus status;
     private String name;
@@ -27,8 +29,8 @@ public class TripResponseDTO {
     private Integer targetMonth;
     private String coverImageUrl;
     private String visibility;
-    private Long workspaceId;
+    private UUID workspaceId;
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;
-    private Long createdBy;
+    private UUID createdBy;
 }

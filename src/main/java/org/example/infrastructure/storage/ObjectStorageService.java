@@ -91,7 +91,13 @@ public class ObjectStorageService {
             return; // Not configured
         }
         try {
-            // Force TLS 1.2 to avoid JVM TLS 1.3 handshake bugs with Cloudflare R2
+            // NOTE: the real TLS 1.2 pin (to avoid JVM TLS 1.3 handshake_failure with Cloudflare
+            // R2) must be set via JAVA_TOOL_OPTIONS (-Dhttps.protocols=TLSv1.2
+            // -Djdk.tls.client.protocols=TLSv1.2) at JVM startup — see pom.xml sam.jvm.yaml patch.
+            // The JDK caches these properties the first time any SSL/TLS class is touched
+            // (e.g. an earlier HTTPS call for JWKS during the same invocation), so setting them
+            // here via System.setProperty is too late to have any effect; kept only as a
+            // best-effort fallback for local/dev runs that don't go through JAVA_TOOL_OPTIONS.
             System.setProperty("https.protocols", "TLSv1.2");
             System.setProperty("jdk.tls.client.protocols", "TLSv1.2");
             log.info("R2 lazy-initializing S3Client. TLS: https.protocols={}, jdk.tls.client.protocols={}",

@@ -1,10 +1,12 @@
 package org.example.domain.entity;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntity;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Agência de viagens — tenant B2B no isolamento multitenant lógico.
@@ -25,7 +27,12 @@ import java.time.Instant;
         @UniqueConstraint(name = "uk_agency_slug", columnNames = {"slug"})
     }
 )
-public class Agency extends PanacheEntity {
+public class Agency extends PanacheEntityBase {
+
+    @Id
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Column(columnDefinition = "uuid")
+    public UUID id;
 
     @Column(nullable = false, length = 255)
     private String name;

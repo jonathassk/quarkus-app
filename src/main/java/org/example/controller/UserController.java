@@ -203,7 +203,7 @@ public class UserController {
     public Response searchUsers(
             @QueryParam("q") String query,
             @Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Invalid or expired token")
@@ -231,7 +231,7 @@ public class UserController {
                 .build();
     }
 
-    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+    private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
         String bearerLine =
                 headers != null
                         ? RequestAuthHeaders.resolveBearerHeaderLine(
@@ -243,7 +243,7 @@ public class UserController {
         }
         try {
             String token = bearerLine.substring("Bearer ".length()).trim();
-            Long userId = Long.valueOf(tokenService.validateToken(token));
+            UUID userId = UUID.fromString(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 return Optional.empty();
             }
@@ -265,7 +265,7 @@ public class UserController {
         @APIResponse(responseCode = "404", description = "Usuário não encontrado")
     })
     public Response getProfile(@Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Invalid or expired token")
@@ -296,7 +296,7 @@ public class UserController {
     public Response updateProfile(
             @RequestBody(description = "Dados para atualização do perfil", required = true) UserProfileUpdateRequestDTO dto,
             @Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Invalid or expired token")
@@ -376,7 +376,7 @@ public class UserController {
         @APIResponse(responseCode = "404", description = "Usuário não encontrado")
     })
     public Response getVisitedCountries(@Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Invalid or expired token")
@@ -406,7 +406,7 @@ public class UserController {
     public Response updateVisitedCountries(
             @RequestBody(description = "Lista de países visitados", required = true) List<String> visitedCountries,
             @Context HttpHeaders headers) {
-        Optional<Long> actorId = resolveAuthenticatedUserId(headers);
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
         if (actorId.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Invalid or expired token")
@@ -439,7 +439,7 @@ public class UserController {
     public Response avatarUploadRequest(
             @RequestBody(description = "Nome do arquivo e content type", required = true) UploadDocumentRequest req,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity(Map.of("code", "UNAUTHORIZED", "message", "Token inválido ou expirado"))

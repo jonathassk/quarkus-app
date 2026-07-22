@@ -1,5 +1,7 @@
 package org.example.controller;
 
+import java.util.UUID;
+
 import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
@@ -22,8 +24,10 @@ import org.example.application.dto.payment.request.PaymentRequestDTO;
 import org.example.application.dto.payment.response.PaymentResponseDTO;
 import org.example.application.services.TokenService;
 import org.example.domain.entity.Trip;
+import org.example.domain.entity.User;
 import org.example.domain.entity.Workspace;
 import org.example.domain.entity.WorkspaceMember;
+import org.example.domain.enums.UserType;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.utils.RequestAuthHeaders;
@@ -38,6 +42,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.net.URI;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -148,7 +153,7 @@ public class PaymentController {
         }
     }
 
-    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+    private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
         String bearerLine = RequestAuthHeaders.resolveBearerHeaderLine(
                 headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
                 headers != null ? headers.getHeaderString(RequestAuthHeaders.BAGGAGI_AUTHORIZATION) : null
@@ -158,7 +163,7 @@ public class PaymentController {
         }
         try {
             String token = bearerLine.substring("Bearer ".length()).trim();
-            Long userId = Long.valueOf(tokenService.validateToken(token));
+            UUID userId = UUID.fromString(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 log.warn("Payment Auth failed: user not found for userId={}", userId);
                 return Optional.empty();
@@ -190,7 +195,7 @@ public class PaymentController {
         if (!isStripeConfigured()) {
             return stripeNotConfiguredResponse();
         }
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED).entity("Invalid or expired token").build();
         }
@@ -324,7 +329,7 @@ public class PaymentController {
                         String targetIdStr = session.getMetadata().get("targetId");
                         String paymentType = session.getMetadata().get("paymentType");
                         if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(Long.valueOf(targetIdStr), paymentType);
+                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType);
                         }
                     }
                     break;
@@ -336,7 +341,7 @@ public class PaymentController {
                         String targetIdStr = sub.getMetadata().get("targetId");
                         String paymentType = sub.getMetadata().get("paymentType");
                         if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(Long.valueOf(targetIdStr), paymentType);
+                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType);
                         }
                     }
                     break;
@@ -346,7 +351,7 @@ public class PaymentController {
                     if (subDeleted != null) {
                         String targetIdStr = subDeleted.getMetadata().get("targetId");
                         if (targetIdStr != null) {
-                            processSubscriptionCancellation(Long.valueOf(targetIdStr));
+                            processSubscriptionCancellation(UUID.fromString(targetIdStr));
                         }
                     }
                     break;
@@ -366,13 +371,14 @@ public class PaymentController {
     }
 
     @Transactional
-    public void processSuccessfulPayment(Long targetId, String paymentType) {
+    public void processSuccessfulPayment(UUID targetId, String paymentType) {
         log.info("Processing successful payment: targetId={}, paymentType={}", targetId, paymentType);
         if ("MENSAL".equals(paymentType) || "ANUAL".equals(paymentType)) {
             Workspace workspace = Workspace.findById(targetId);
             if (workspace != null) {
                 workspace.setPlanType("B2C_PREMIUM");
                 workspace.persist();
+                upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
                 log.info("Workspace {} updated to B2C_PREMIUM", targetId);
             }
         } else if ("MENSAL_TRIP_AGENT".equals(paymentType) || "ANUAL_TRIP_AGENT".equals(paymentType)) {
@@ -380,6 +386,7 @@ public class PaymentController {
             if (workspace != null) {
                 workspace.setPlanType("B2B_PRO");
                 workspace.persist();
+                upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
                 log.info("Workspace {} updated to B2B_PRO", targetId);
             }
         } else if ("UNITARIO".equals(paymentType)) {
@@ -388,8 +395,24 @@ public class PaymentController {
         }
     }
 
+    /**
+     * Atualiza o {@code userType} de todos os membros do workspace para o tipo informado.
+     * Usado para refletir, ao nível do usuário, o upgrade de plano feito no workspace após um pagamento confirmado.
+     */
+    private void upgradeWorkspaceMembersUserType(UUID workspaceId, UserType userType) {
+        List<WorkspaceMember> members = WorkspaceMember.find("workspace.id", workspaceId).list();
+        for (WorkspaceMember member : members) {
+            User user = member.getUser();
+            if (user != null && user.getUserType() != userType) {
+                user.setUserType(userType);
+                user.persist();
+                log.info("User {} userType updated to {}", user.getId(), userType);
+            }
+        }
+    }
+
     @Transactional
-    public void processSubscriptionCancellation(Long targetId) {
+    public void processSubscriptionCancellation(UUID targetId) {
         log.info("Processing subscription cancellation: targetId={}", targetId);
         Workspace workspace = Workspace.findById(targetId);
         if (workspace != null) {

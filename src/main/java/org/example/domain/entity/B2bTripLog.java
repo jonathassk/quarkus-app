@@ -1,11 +1,13 @@
 package org.example.domain.entity;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntity;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.enums.B2bTripLogAction;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Registro de auditoria operacional para viagens B2B.
@@ -33,7 +35,12 @@ import java.time.Instant;
         @Index(name = "idx_b2b_trip_logs_agency", columnList = "agency_id")
     }
 )
-public class B2bTripLog extends PanacheEntity {
+public class B2bTripLog extends PanacheEntityBase {
+
+    @Id
+    @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+    @Column(columnDefinition = "uuid")
+    public UUID id;
 
     /** Agência à qual a viagem pertence. */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -63,8 +70,8 @@ public class B2bTripLog extends PanacheEntity {
     private String entityType;
 
     /** ID da entidade-alvo (segmento, atividade, refeição, etc.), se aplicável. */
-    @Column(name = "entity_id")
-    private Long entityId;
+    @Column(name = "entity_id", columnDefinition = "uuid")
+    private UUID entityId;
 
     /**
      * Resumo JSON do estado anterior à operação.

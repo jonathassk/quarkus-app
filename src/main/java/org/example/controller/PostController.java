@@ -1,5 +1,7 @@
 package org.example.controller;
 
+import java.util.UUID;
+
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -13,6 +15,7 @@ import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.services.PostService;
 import org.example.application.services.PostService.PostForbiddenException;
 import org.example.application.services.PostService.PostNotFoundException;
@@ -21,7 +24,9 @@ import org.example.domain.entity.Post;
 import org.example.domain.entity.PostComment;
 import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.auth.NeonAuthJwtVerifier;
+import org.example.infrastructure.storage.ObjectStorageService;
 import org.example.utils.AuthTokenException;
+import org.example.utils.DocumentUploadSupport;
 import org.example.utils.JwtAuthSupport;
 import org.example.utils.RequestAuthHeaders;
 
@@ -40,6 +45,7 @@ import java.util.stream.Collectors;
  * <h2>Rotas disponíveis</h2>
  * <pre>
  * POST   /api/v1/posts                          — criar postagem
+ * POST   /api/v1/posts/image-upload-request     — URL presignada R2 para imagem da postagem
  * PUT    /api/v1/posts/{id}                     — editar postagem (só autor)
  * DELETE /api/v1/posts/{id}                     — apagar postagem (só autor)
  * GET    /api/v1/posts/{id}                     — buscar postagem por ID
@@ -64,6 +70,82 @@ public class PostController {
     private final TokenService tokenService;
     private final UserRepository userRepository;
     private final NeonAuthJwtVerifier neonAuthJwtVerifier;
+    private final ObjectStorageService objectStorageService;
+
+    // =========================================================================
+    // POST — Solicitar upload de imagem (R2)
+    // =========================================================================
+
+    @POST
+    @Path("/image-upload-request")
+    @Operation(
+        summary = "Solicitar upload de imagem de postagem",
+        description = "Gera uma URL presignada para o frontend enviar a imagem da postagem " +
+                      "diretamente ao Cloudflare R2. Apenas imagens (JPEG, PNG, WebP, GIF)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "URL presignada gerada com sucesso"),
+        @APIResponse(responseCode = "400", description = "Dados inválidos ou tipo não suportado"),
+        @APIResponse(responseCode = "401", description = "Token ausente ou inválido"),
+        @APIResponse(responseCode = "503", description = "Storage não configurado"),
+        @APIResponse(responseCode = "500", description = "Erro interno")
+    })
+    public Response imageUploadRequest(
+            @RequestBody(description = "Nome do arquivo e content type", required = true)
+                    UploadDocumentRequest req,
+            @Context HttpHeaders headers) {
+
+        AuthResult auth = resolveAuth(headers);
+        if (!auth.authenticated()) {
+            return unauthorized("Token ausente ou inválido");
+        }
+
+        if (!objectStorageService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(errorBody("STORAGE_NOT_CONFIGURED", "Document storage is not configured"))
+                    .build();
+        }
+
+        if (req == null) {
+            return badRequest("VALIDATION_ERROR", "Request body is required");
+        }
+
+        Optional<DocumentUploadSupport.ResolvedUpload> resolved =
+                DocumentUploadSupport.resolve(req.getFileName(), req.getContentType());
+        if (resolved.isEmpty()) {
+            String msg = DocumentUploadSupport.unsupportedTypeMessage(
+                    req.getContentType(), req.getFileName());
+            return badRequest("UNSUPPORTED_CONTENT_TYPE", msg);
+        }
+
+        DocumentUploadSupport.ResolvedUpload upload = resolved.get();
+        if (!upload.contentType().startsWith("image/")) {
+            return badRequest(
+                    "UNSUPPORTED_CONTENT_TYPE",
+                    "Only image uploads are allowed for posts (JPEG, PNG, WebP, GIF)");
+        }
+
+        String extension = DocumentUploadSupport.extractExtension(upload.fileName());
+        String s3Key = "posts/" + auth.userId() + "/post-" + UUID.randomUUID() + extension;
+
+        try {
+            String uploadUrl = objectStorageService.presignPut(s3Key, upload.contentType());
+            String publicUrl = objectStorageService.getPublicUrl(s3Key);
+
+            var body = Map.of(
+                    "uploadUrl", uploadUrl,
+                    "s3Key", s3Key,
+                    "publicUrl", publicUrl,
+                    "expiresInSeconds", objectStorageService.getUploadPresignSeconds()
+            );
+
+            log.info("POST /posts/image-upload-request 201 userId={} s3Key={}", auth.userId(), s3Key);
+            return Response.status(Response.Status.CREATED).entity(body).build();
+        } catch (Exception e) {
+            log.error("Post image upload request failed userId={}", auth.userId(), e);
+            return internalError("Erro ao gerar URL presignada: " + e.getMessage());
+        }
+    }
 
     // =========================================================================
     // POST — Criar postagem
@@ -549,7 +631,7 @@ public class PostController {
 
         try {
             String userIdStr = tokenService.validateToken(token);
-            Long userId = Long.valueOf(userIdStr);
+            UUID userId = UUID.fromString(userIdStr);
             var user = userRepository.findById(userId);
             if (user == null) {
                 return AuthResult.unauthenticated();

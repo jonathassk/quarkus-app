@@ -1,5 +1,7 @@
 package org.example.application.services;
 
+import java.util.UUID;
+
 import io.smallrye.jwt.auth.principal.JWTParser;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -123,7 +125,7 @@ public class AuthSessionService {
         Object customUserId = jwt.getClaim("custom:userId");
         if (customUserId != null && !customUserId.toString().isBlank()) {
             try {
-                Long id = Long.valueOf(customUserId.toString().trim());
+                UUID id = UUID.fromString(customUserId.toString().trim());
                 User byId = userRepository.findById(id);
                 if (byId != null) {
                     return byId;

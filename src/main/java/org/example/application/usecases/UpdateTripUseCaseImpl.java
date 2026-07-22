@@ -1,5 +1,7 @@
 package org.example.application.usecases;
 
+import java.util.UUID;
+
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
@@ -10,6 +12,7 @@ import org.example.application.dto.trip.request.TripRequestDTO;
 import org.example.application.dto.trip.request.UserInlcudeRequestDTO;
 import org.example.application.dto.trip.TripUserDTO;
 import org.example.application.services.TripService;
+import org.example.application.services.chat.TripChatService;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.User;
@@ -30,11 +33,12 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
     private final TripRepository tripRepository;
     private final UserRepository userRepository;
     private final TripService tripService;
+    private final TripChatService tripChatService;
     private final ModelMapper modelMapper = new ModelMapper();
 
     @Transactional
     @Override
-    public Trip updateTrip(Long tripId, TripRequestDTO tripRequestDTO) {
+    public Trip updateTrip(UUID tripId, TripRequestDTO tripRequestDTO) {
         try {
             Trip trip = tripRepository.findByIdWithLock(tripId);
             if (trip == null) {
@@ -65,7 +69,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
                             .build());
                 }
                 if (!usersRequest.isEmpty()) {
-                    List<Long> userIds = usersRequest.stream().map(UserInlcudeRequestDTO::getUserId).toList();
+                    List<UUID> userIds = usersRequest.stream().map(UserInlcudeRequestDTO::getUserId).toList();
                     List<User> users = userRepository.list("id in ?1", userIds);
                     if (users.size() != userIds.size()) {
                         log.warn("Update trip failed: some users not found, tripId={}, requested={}, found={}",
@@ -92,7 +96,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
 
     @Override
     @Transactional
-    public Trip updateUsersTrip(Long tripId, List<UserInlcudeRequestDTO> usersRequest) {
+    public Trip updateUsersTrip(UUID tripId, List<UserInlcudeRequestDTO> usersRequest) {
         try {
             Trip trip = tripRepository.findByIdWithLock(tripId);
             if (trip == null) {
@@ -100,7 +104,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
                 throw new NotFoundException("Trip not found with id: " + tripId);
             }
 
-            List<Long> userIds = usersRequest.stream()
+            List<UUID> userIds = usersRequest.stream()
                     .map(UserInlcudeRequestDTO::getUserId)
                     .toList();
 
@@ -111,7 +115,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
                 throw new NotFoundException("Some users were not found");
             }
 
-            Map<Long, String> userPermissions = usersRequest.stream()
+            Map<UUID, String> userPermissions = usersRequest.stream()
                     .collect(Collectors.toMap(
                             UserInlcudeRequestDTO::getUserId,
                             UserInlcudeRequestDTO::getPermissionLevel
@@ -128,13 +132,13 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
     }
 
     @Override
-    public Trip updateTripUserRelation(Long tripId, Long userId, String permissionLevel) {
+    public Trip updateTripUserRelation(UUID tripId, UUID userId, String permissionLevel) {
         return null;
     }
 
     @Override
     @Transactional
-    public Trip updateNameAndDescription(Long tripId, NameDescriptionTravelRequestDto tripRequestDTO) {
+    public Trip updateNameAndDescription(UUID tripId, NameDescriptionTravelRequestDto tripRequestDTO) {
         try {
             Trip trip = tripRepository.findByIdWithLock(tripId);
             if (trip == null) {
@@ -157,7 +161,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
 
     @Override
     @Transactional
-    public void deleteTrip(Long tripId, Long requesterUserId) {
+    public void deleteTrip(UUID tripId, UUID requesterUserId) {
         Trip trip = tripRepository.findById(tripId);
         if (trip == null) {
             log.warn("Delete trip failed: trip not found, tripId={}", tripId);
@@ -168,6 +172,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
             log.warn("Delete trip rejected: userId={} is not creator of tripId={}", requesterUserId, tripId);
             throw new ForbiddenException("Only the trip creator can delete this trip");
         }
+        tripChatService.archiveConversation(tripId);
         tripRepository.delete(trip);
     }
 }

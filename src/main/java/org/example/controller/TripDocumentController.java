@@ -68,9 +68,9 @@ public class TripDocumentController {
         @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem")
     })
     public Response listDocuments(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("List documents unauthorized tripId={}", tripId);
             return unauthorizedResponse();
@@ -112,10 +112,10 @@ public class TripDocumentController {
         @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
     })
     public Response uploadDocument(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             MultipartFormDataInput multipart,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return unauthorizedResponse();
         }
@@ -224,10 +224,10 @@ public class TripDocumentController {
         @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
     })
     public Response uploadRequest(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             @RequestBody(description = "Nome do arquivo e content type", required = true) UploadDocumentRequest req,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("Upload request unauthorized tripId={}", tripId);
             return unauthorizedResponse();
@@ -336,10 +336,10 @@ public class TripDocumentController {
         @APIResponse(responseCode = "404", description = "Documento ou viagem não encontrados")
     })
     public Response uploadConfirm(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             @RequestBody(description = "ID do documento a ser confirmado", required = true) ConfirmUploadRequest req,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("Upload confirm unauthorized tripId={}", tripId);
             return unauthorizedResponse();
@@ -416,10 +416,10 @@ public class TripDocumentController {
         @APIResponse(responseCode = "404", description = "Documento não encontrado")
     })
     public Response deleteDocument(
-            @PathParam("tripId") Long tripId,
-            @PathParam("docId") Long docId,
+            @PathParam("tripId") UUID tripId,
+            @PathParam("docId") UUID docId,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("Delete document unauthorized tripId={} docId={}", tripId, docId);
             return unauthorizedResponse();
@@ -480,10 +480,10 @@ public class TripDocumentController {
         @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
     })
     public Response viewRequest(
-            @PathParam("tripId") Long tripId,
-            @PathParam("docId") Long docId,
+            @PathParam("tripId") UUID tripId,
+            @PathParam("docId") UUID docId,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("View request unauthorized tripId={} docId={}", tripId, docId);
             return unauthorizedResponse();
@@ -541,7 +541,7 @@ public class TripDocumentController {
         }
     }
 
-    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+    private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
         String bearerLine =
                 headers != null
                         ? RequestAuthHeaders.resolveBearerHeaderLine(
@@ -553,7 +553,7 @@ public class TripDocumentController {
         }
         try {
             String token = bearerLine.substring("Bearer ".length()).trim();
-            Long userId = Long.valueOf(tokenService.validateToken(token));
+            UUID userId = UUID.fromString(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 log.warn("Document auth: user not found userId={}", userId);
                 return Optional.empty();

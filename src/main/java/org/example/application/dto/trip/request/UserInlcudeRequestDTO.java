@@ -1,5 +1,7 @@
 package org.example.application.dto.trip.request;
 
+import java.util.UUID;
+
 import lombok.*;
 
 @Data
@@ -8,6 +10,6 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 public class UserInlcudeRequestDTO {
-    private Long userId;
+    private UUID userId;
     private String permissionLevel;
 }

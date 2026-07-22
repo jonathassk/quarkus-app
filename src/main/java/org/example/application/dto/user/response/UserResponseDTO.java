@@ -1,5 +1,7 @@
 package org.example.application.dto.user.response;
 
+import java.util.UUID;
+
 import lombok.*;
 
 @Data
@@ -12,7 +14,7 @@ public class UserResponseDTO {
     private String refreshToken;
     private Long expiresIn;
     private String username;
-    private Long id;
+    private UUID id;
     private String email;
     private String fullname;
     private String userType;

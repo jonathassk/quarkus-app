@@ -6,9 +6,11 @@ API de planejamento de viagens (Quarkus 3 + PostgreSQL/Neon), deployada em **AWS
 
 | Documento | Descrição |
 |-----------|-----------|
-| **[ARQUITETURA.md](ARQUITETURA.md)** | Arquitetura completa: DNS, Cloudflare, frontend Vercel, Neon Auth, Lambdas, Neon, API |
+| **[docs/BACKEND.md](docs/BACKEND.md)** | **Referência do backend** — o que faz, camadas, bounded contexts, escolhas, integrações e contratos com o front |
+| **[ARQUITETURA.md](ARQUITETURA.md)** | Arquitetura ponta a ponta: DNS, Cloudflare, frontend Vercel, Neon Auth, Lambdas, Neon |
 | **[DEPLOY.md](DEPLOY.md)** | Deploy SAM, variáveis de ambiente, troubleshooting |
-| **[DOCUMENTACAO.md](DOCUMENTACAO.md)** | Código, DTOs, endpoints, desenvolvimento local |
+| **[docs/SES_SETUP.md](docs/SES_SETUP.md)** | Amazon SES + Lambda `email-worker` |
+| **[DOCUMENTACAO.md](DOCUMENTACAO.md)** | Notas antigas de código/DTOs (preferir `docs/BACKEND.md` se houver conflito) |
 | **[EXEMPLO_USO.md](EXEMPLO_USO.md)** | Exemplo de payload de viagem |
 
 ---

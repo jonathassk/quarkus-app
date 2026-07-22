@@ -1,5 +1,7 @@
 package org.example.controller;
 
+import java.util.UUID;
+
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
@@ -59,9 +61,9 @@ public class TripChecklistController {
         @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem")
     })
     public Response listItems(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return unauthorizedResponse();
         }
@@ -96,10 +98,10 @@ public class TripChecklistController {
         @APIResponse(responseCode = "404", description = "Viagem não encontrada")
     })
     public Response createItem(
-            @PathParam("tripId") Long tripId,
+            @PathParam("tripId") UUID tripId,
             @RequestBody(description = "Dados para criação do item", required = true) CreateTripChecklistItemRequest body,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return unauthorizedResponse();
         }
@@ -168,11 +170,11 @@ public class TripChecklistController {
         @APIResponse(responseCode = "404", description = "Item de checklist ou viagem não encontrados")
     })
     public Response updateItem(
-            @PathParam("tripId") Long tripId,
-            @PathParam("itemId") Long itemId,
+            @PathParam("tripId") UUID tripId,
+            @PathParam("itemId") UUID itemId,
             @RequestBody(description = "Dados para atualização do item", required = true) UpdateTripChecklistItemRequest body,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return unauthorizedResponse();
         }
@@ -217,7 +219,7 @@ public class TripChecklistController {
             checklistRepository.persist(item);
 
             Trip trip = tripRepository.findById(tripId);
-            final Long actorId = userIdOpt.get();
+            final UUID actorId = userIdOpt.get();
             String prevJson = "{\"title\":\"" + esc(prevTitle) + "\",\"completed\":" + prevCompleted + "}";
             String newJson  = "{\"title\":\"" + esc(item.getTitle()) + "\",\"completed\":" + item.getCompleted() + "}";
             auditService.record(
@@ -249,10 +251,10 @@ public class TripChecklistController {
         @APIResponse(responseCode = "404", description = "Item de checklist ou viagem não encontrados")
     })
     public Response deleteItem(
-            @PathParam("tripId") Long tripId,
-            @PathParam("itemId") Long itemId,
+            @PathParam("tripId") UUID tripId,
+            @PathParam("itemId") UUID itemId,
             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             return unauthorizedResponse();
         }
@@ -300,7 +302,7 @@ public class TripChecklistController {
                 .build();
     }
 
-    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+    private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
         String bearerLine =
                 headers != null
                         ? RequestAuthHeaders.resolveBearerHeaderLine(
@@ -312,7 +314,7 @@ public class TripChecklistController {
         }
         try {
             String token = bearerLine.substring("Bearer ".length()).trim();
-            Long userId = Long.valueOf(tokenService.validateToken(token));
+            UUID userId = UUID.fromString(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 return Optional.empty();
             }

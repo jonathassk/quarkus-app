@@ -6,8 +6,10 @@ Documentos relacionados:
 
 | Arquivo | Conteúdo |
 |---------|----------|
+| **[docs/BACKEND.md](docs/BACKEND.md)** | Referência atual do backend (domínios, APIs, integrações, decisões) |
 | [DEPLOY.md](DEPLOY.md) | Deploy SAM/Lambda, erros comuns (CORS, Neon, SnapStart) |
-| [DOCUMENTACAO.md](DOCUMENTACAO.md) | Detalhes de código, DTOs e desenvolvimento local |
+| [docs/SES_SETUP.md](docs/SES_SETUP.md) | SES + email-worker |
+| [DOCUMENTACAO.md](DOCUMENTACAO.md) | Notas antigas de código/DTOs |
 | [EXEMPLO_USO.md](EXEMPLO_USO.md) | Exemplo de payload completo de viagem |
 | [scripts/neon-schema-auth.sql](scripts/neon-schema-auth.sql) | SQL manual para coluna `auth_user_id` no Neon |
 
@@ -157,7 +159,7 @@ sam deploy -t target/sam.jvm.yaml --parameter-overrides DbPassword="SENHA_NEON"
 | `QUARKUS_DATASOURCE_JDBC_URL` | Não | Override da JDBC URL |
 | `QUARKUS_HTTP_CORS_ORIGINS` | Recomendado | Lista de origens do frontend |
 | `NEON_AUTH_BASE_URL` | Sim | URL base do Neon Auth (JWKS + issuer) |
-| `JAVA_TOOL_OPTIONS` | Sim | `-Djava.net.preferIPv4Stack=true` |
+| `JAVA_TOOL_OPTIONS` | Sim | `-Djava.net.preferIPv4Stack=true -Dhttps.protocols=TLSv1.2 -Djdk.tls.client.protocols=TLSv1.2` (o pin em TLS 1.2 evita `handshake_failure` da JVM ao falar com o R2 da Cloudflare — precisa ser via `JAVA_TOOL_OPTIONS`, setar via `System.setProperty` em runtime não funciona pois a JVM já cacheou o provider TLS antes) |
 
 **Requisito de rede:** Lambda **sem VPC** (ou VPC com NAT) para alcançar Neon e JWKS do Neon Auth na internet.
 

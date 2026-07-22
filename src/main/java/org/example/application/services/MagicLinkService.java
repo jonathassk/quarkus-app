@@ -1,5 +1,7 @@
 package org.example.application.services;
 
+import java.util.UUID;
+
 import io.smallrye.jwt.auth.principal.JWTParser;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -76,7 +78,7 @@ public class MagicLinkService {
      * @return JWT assinado, válido por 15 minutos.
      * @throws AuthTokenException se o e-mail não estiver vinculado à viagem.
      */
-    public String generateMagicLinkToken(String email, Long tripId)
+    public String generateMagicLinkToken(String email, UUID tripId)
             throws GeneralSecurityException, IOException {
 
         String normalizedEmail = normalize(email);
@@ -128,13 +130,13 @@ public class MagicLinkService {
     // Tipos de retorno
     // -------------------------------------------------------------------------
 
-    public record MagicLinkVerifyResult(String accessToken, Long userId, Long tripId) {}
+    public record MagicLinkVerifyResult(String accessToken, UUID userId, UUID tripId) {}
 
     // -------------------------------------------------------------------------
     // Helpers privados
     // -------------------------------------------------------------------------
 
-    private void validateGuestEmailLinkedToTrip(String email, Long tripId) {
+    private void validateGuestEmailLinkedToTrip(String email, UUID tripId) {
         Trip trip = tripRepository.findById(tripId);
         if (trip == null) {
             throw new AuthTokenException("TRIP_NOT_FOUND", "Viagem não encontrada: " + tripId);
@@ -175,7 +177,7 @@ public class MagicLinkService {
                 throw new AuthTokenException("INVALID_TOKEN", "Token malformado");
             }
 
-            Long tripId = ((Number) tripIdClaim).longValue();
+            UUID tripId = UUID.fromString(tripIdClaim.toString());
             return new ParsedMagicLink(normalize(email), tripId);
 
         } catch (AuthTokenException e) {
@@ -190,9 +192,9 @@ public class MagicLinkService {
         }
     }
 
-    private record ParsedMagicLink(String email, Long tripId) {}
+    private record ParsedMagicLink(String email, UUID tripId) {}
 
-    private User resolveOrCreateGuest(String email, Long tripId) {
+    private User resolveOrCreateGuest(String email, UUID tripId) {
         return userRepository.findByEmail(email)
                 .orElseGet(() -> {
                     String base = email.split("@")[0]

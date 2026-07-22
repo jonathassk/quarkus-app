@@ -1,5 +1,7 @@
 package org.example.application.services;
 
+import java.util.UUID;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -64,10 +66,10 @@ public class B2bAuditService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void record(
             Trip trip,
-            Long actorUserId,
+            UUID actorUserId,
             B2bTripLogAction action,
             String entityType,
-            Long entityId,
+            UUID entityId,
             String previousSnapshot,
             String newSnapshot,
             String description,
@@ -117,7 +119,7 @@ public class B2bAuditService {
      * Sobrecarga simplificada para operações sem snapshot de estado.
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public void record(Trip trip, Long actorUserId, B2bTripLogAction action, String description) {
+    public void record(Trip trip, UUID actorUserId, B2bTripLogAction action, String description) {
         record(trip, actorUserId, action, "TRIP", trip != null ? trip.id : null,
                 null, null, description, null);
     }
@@ -128,10 +130,10 @@ public class B2bAuditService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void record(
             Trip trip,
-            Long actorUserId,
+            UUID actorUserId,
             B2bTripLogAction action,
             String entityType,
-            Long entityId,
+            UUID entityId,
             String description) {
         record(trip, actorUserId, action, entityType, entityId, null, null, description, null);
     }

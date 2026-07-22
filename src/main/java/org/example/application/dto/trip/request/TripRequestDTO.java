@@ -1,5 +1,7 @@
 package org.example.application.dto.trip.request;
 
+import java.util.UUID;
+
 import lombok.*;
 import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.TripUserDTO;
@@ -22,8 +24,8 @@ public class TripRequestDTO {
     private int durationDays;
     private Integer targetMonth;
     private String coverImageUrl;
-    private Long createdBy;
-    private Long workspaceId;
+    private UUID createdBy;
+    private UUID workspaceId;
     private String visibility;
     private List<TripSegmentDTO> segments;
     private List<TripUserDTO> users;

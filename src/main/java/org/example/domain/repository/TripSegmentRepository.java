@@ -1,7 +1,10 @@
 package org.example.domain.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepository;
+import java.util.UUID;
+
+import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+
 import org.example.domain.entity.TripSegment;
 
-public class TripSegmentRepository implements PanacheRepository<TripSegment> {
+public class TripSegmentRepository implements PanacheRepositoryBase<TripSegment, UUID> {
 }

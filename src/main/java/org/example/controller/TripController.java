@@ -1,5 +1,7 @@
 package org.example.controller;
 
+import java.util.UUID;
+
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
@@ -67,7 +69,7 @@ public class TripController {
     private static final String AUTH_HEADER_MSG = "Missing or invalid Authorization header";
     private static final String FORBIDDEN_TRIP_MSG = "You do not have access to this trip";
 
-    private Optional<Long> resolveAuthenticatedUserId(HttpHeaders headers) {
+    private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
         String bearerLine =
                 RequestAuthHeaders.resolveBearerHeaderLine(
                         headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
@@ -79,7 +81,7 @@ public class TripController {
         }
         try {
             String token = bearerLine.substring("Bearer ".length()).trim();
-            Long userId = Long.valueOf(tokenService.validateToken(token));
+            UUID userId = UUID.fromString(tokenService.validateToken(token));
             if (userRepository.findById(userId) == null) {
                 log.warn("Auth failed: user not found for userId={}", userId);
                 return Optional.empty();
@@ -119,7 +121,7 @@ public class TripController {
      * </ul>
      * Viagens B2C ({@code trip.agency == null}) seguem o fluxo normal.
      */
-    private Response ensureTripMember(Long tripId, HttpHeaders headers) {
+    private Response ensureTripMember(UUID tripId, HttpHeaders headers) {
         String bearerLine =
                 headers != null
                         ? RequestAuthHeaders.resolveBearerHeaderLine(
@@ -130,7 +132,7 @@ public class TripController {
             log.warn("Trip access denied: tripId={}, reason=missing_auth_header", tripId);
             return missingAuthHeaderResponse();
         }
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             log.warn("Trip access denied: tripId={}, reason=invalid_token", tripId);
             return unauthorizedResponse();
@@ -141,7 +143,7 @@ public class TripController {
             return Response.status(Response.Status.NOT_FOUND).entity("Trip not found").build();
         }
 
-        Long userId = userIdOpt.get();
+        UUID userId = userIdOpt.get();
 
         // -------------------------------------------------------------------
         // Bypass B2B: viagem pertence a uma agência
@@ -211,7 +213,7 @@ public class TripController {
         @APIResponse(responseCode = "401", description = "Token inválido, expirado ou ausente")
     })
     public Response listTripsForCurrentUser(@Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             if (RequestAuthHeaders.resolveBearerHeaderLine(
                             headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
@@ -250,7 +252,7 @@ public class TripController {
         try {
             // Resolve the authenticated user from the Neon Auth JWT (JIT sync if needed).
             // Overrides any createdBy sent in the body.
-            Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+            Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
             if (userIdOpt.isEmpty()) {
                 log.warn("Create trip rejected: unauthorized (name={})", tripRequest.getName());
                 return unauthorizedResponse();
@@ -287,7 +289,7 @@ public class TripController {
         @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
         @APIResponse(responseCode = "404", description = "Viagem não encontrada")
     })
-    public Response getTripById(@PathParam("tripId") Long tripId,
+    public Response getTripById(@PathParam("tripId") UUID tripId,
                                @Context HttpHeaders headers) {
         Response denied = ensureTripMember(tripId, headers);
         if (denied != null) {
@@ -314,7 +316,7 @@ public class TripController {
         @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
         @APIResponse(responseCode = "500", description = "Erro interno")
     })
-    public Response updateTrip(@PathParam("tripId") Long tripId,
+    public Response updateTrip(@PathParam("tripId") UUID tripId,
                               @Valid @RequestBody(description = "Novos dados da viagem", required = true) TripRequestDTO tripRequest,
                               @Context HttpHeaders headers) {
         Response denied = ensureTripEditor(tripId, headers);
@@ -363,7 +365,7 @@ public class TripController {
         @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
         @APIResponse(responseCode = "500", description = "Erro interno")
     })
-    public Response updateTripNameAndDescription(@PathParam("tripId") Long tripId,
+    public Response updateTripNameAndDescription(@PathParam("tripId") UUID tripId,
                                                    @Valid @RequestBody(description = "Novo nome e descrição", required = true) NameDescriptionTravelRequestDto request,
                                                    @Context HttpHeaders headers) {
         Response denied = ensureTripEditor(tripId, headers);
@@ -427,7 +429,7 @@ public class TripController {
         @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
         @APIResponse(responseCode = "500", description = "Erro interno")
     })
-    public Response updateUsersTrip(@PathParam("tripId") Long tripId,
+    public Response updateUsersTrip(@PathParam("tripId") UUID tripId,
                                    @Valid @RequestBody(description = "Lista de colaboradores e permissões", required = true) List<UserInlcudeRequestDTO> request,
                                    @Context HttpHeaders headers) {
         Response denied = ensureTripManager(tripId, headers);
@@ -471,9 +473,9 @@ public class TripController {
         @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
         @APIResponse(responseCode = "500", description = "Erro interno")
     })
-    public Response deleteTrip(@PathParam("tripId") Long tripId,
+    public Response deleteTrip(@PathParam("tripId") UUID tripId,
                             @Context HttpHeaders headers) {
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
             if (RequestAuthHeaders.resolveBearerHeaderLine(
                             headers != null ? headers.getHeaderString(HttpHeaders.AUTHORIZATION) : null,
@@ -516,12 +518,12 @@ public class TripController {
         }
     }
 
-    private Response ensureTripEditor(Long tripId, HttpHeaders headers) {
+    private Response ensureTripEditor(UUID tripId, HttpHeaders headers) {
         Response base = ensureTripMember(tripId, headers);
         if (base != null) {
             return base;
         }
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         Trip trip = tripRepository.findById(tripId);
         if (userIdOpt.isEmpty() || trip == null) {
             return unauthorizedResponse();
@@ -536,12 +538,12 @@ public class TripController {
         return null;
     }
 
-    private Response ensureTripManager(Long tripId, HttpHeaders headers) {
+    private Response ensureTripManager(UUID tripId, HttpHeaders headers) {
         Response base = ensureTripMember(tripId, headers);
         if (base != null) {
             return base;
         }
-        Optional<Long> userIdOpt = resolveAuthenticatedUserId(headers);
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         Trip trip = tripRepository.findById(tripId);
         if (userIdOpt.isEmpty() || trip == null) {
             return unauthorizedResponse();

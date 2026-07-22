@@ -13,10 +13,10 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.22.3</quarkus.platform.version>
+        <quarkus.platform.version>3.24.5</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.2</surefire-plugin.version>
-        <lombok.version>1.18.32</lombok.version>
+        <lombok.version>1.18.46</lombok.version>
     </properties>
 
     <dependencyManagement>
@@ -120,6 +120,11 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>dynamodb</artifactId>
+            <version>2.29.45</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>lambda</artifactId>
             <version>2.29.45</version>
         </dependency>
         <dependency>
@@ -231,7 +236,7 @@
                                          failOnNoReplacements="false"/>
                                 <replace file="${project.build.directory}/sam.jvm.yaml"
                                          token="        MemorySize: 512&#10;        Policies: AWSLambdaBasicExecutionRole&#10;        Timeout: 15&#10;        Events:"
-                                         value="        MemorySize: 1024&#10;        Policies:&#10;          - AWSLambdaBasicExecutionRole&#10;          - AmazonDynamoDBFullAccess&#10;        Environment:&#10;          Variables:&#10;            QUARKUS_PROFILE: lambda&#10;            QUARKUS_DATASOURCE_PASSWORD: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:QUARKUS_DATASOURCE_PASSWORD::}}&apos;&#10;            QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000,https://baggagi.com,https://www.baggagi.com,https://baggaqi.com,https://www.baggaqi.com,https://baqqaqi.com,https://www.baqqaqi.com&#10;            NEON_AUTH_BASE_URL: https://ep-steep-night-ai1jrfuk.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth&#10;            JAVA_TOOL_OPTIONS: -Djava.net.preferIPv4Stack=true&#10;            R2_BUCKET_NAME: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_BUCKET_NAME::}}&apos;&#10;            R2_ENDPOINT: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_ENDPOINT::}}&apos;&#10;            R2_ACCESS_KEY_ID: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_ACCESS_KEY_ID::}}&apos;&#10;            R2_SECRET_ACCESS_KEY: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_SECRET_ACCESS_KEY::}}&apos;&#10;            R2_PUBLIC_URL_PREFIX: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_PUBLIC_URL_PREFIX::}}&apos;&#10;            STRIPE_API_KEY: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_API_KEY::}}&apos;&#10;            STRIPE_WEBHOOK_SECRET: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_WEBHOOK_SECRET::}}&apos;&#10;            STRIPE_SUCCESS_URL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_SUCCESS_URL::}}&apos;&#10;            STRIPE_CANCEL_URL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_CANCEL_URL::}}&apos;&#10;            STRIPE_PRICE_MENSAL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_MENSAL::}}&apos;&#10;            STRIPE_PRICE_ANUAL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_ANUAL::}}&apos;&#10;            STRIPE_PRICE_MENSAL_AGENT: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_MENSAL_AGENT::}}&apos;&#10;            STRIPE_PRICE_ANUAL_AGENT: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_ANUAL_AGENT::}}&apos;&#10;        Timeout: 30&#10;        AutoPublishAlias: live&#10;        SnapStart:&#10;          ApplyOn: PublishedVersions&#10;        Events:"
+                                         value="        MemorySize: 1024&#10;        Policies:&#10;          - AWSLambdaBasicExecutionRole&#10;          - AmazonDynamoDBFullAccess&#10;        Environment:&#10;          Variables:&#10;            QUARKUS_PROFILE: lambda&#10;            QUARKUS_DATASOURCE_PASSWORD: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:QUARKUS_DATASOURCE_PASSWORD::}}&apos;&#10;            QUARKUS_HTTP_CORS_ORIGINS: http://localhost:3000,https://baggagi.com,https://www.baggagi.com,https://baggaqi.com,https://www.baggaqi.com,https://baqqaqi.com,https://www.baqqaqi.com&#10;            NEON_AUTH_BASE_URL: https://ep-steep-night-ai1jrfuk.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth&#10;            JAVA_TOOL_OPTIONS: -Djava.net.preferIPv4Stack=true -Dhttps.protocols=TLSv1.2 -Djdk.tls.client.protocols=TLSv1.2&#10;            R2_BUCKET_NAME: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_BUCKET_NAME::}}&apos;&#10;            R2_ENDPOINT: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_ENDPOINT::}}&apos;&#10;            R2_ACCESS_KEY_ID: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_ACCESS_KEY_ID::}}&apos;&#10;            R2_SECRET_ACCESS_KEY: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_SECRET_ACCESS_KEY::}}&apos;&#10;            R2_PUBLIC_URL_PREFIX: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:R2_PUBLIC_URL_PREFIX::}}&apos;&#10;            STRIPE_API_KEY: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_API_KEY::}}&apos;&#10;            STRIPE_WEBHOOK_SECRET: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_WEBHOOK_SECRET::}}&apos;&#10;            STRIPE_SUCCESS_URL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_SUCCESS_URL::}}&apos;&#10;            STRIPE_CANCEL_URL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_CANCEL_URL::}}&apos;&#10;            STRIPE_PRICE_MENSAL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_MENSAL::}}&apos;&#10;            STRIPE_PRICE_ANUAL: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_ANUAL::}}&apos;&#10;            STRIPE_PRICE_MENSAL_AGENT: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_MENSAL_AGENT::}}&apos;&#10;            STRIPE_PRICE_ANUAL_AGENT: !Sub &apos;{{resolve:secretsmanager:${AppSecretsName}:SecretString:STRIPE_PRICE_ANUAL_AGENT::}}&apos;&#10;        Timeout: 30&#10;        AutoPublishAlias: live&#10;        SnapStart:&#10;          ApplyOn: PublishedVersions&#10;        Events:"
                                          failOnNoReplacements="false"/>
                                 <replace file="${project.build.directory}/sam.jvm.yaml"
                                          token="        Events:&#10;          HttpApiEvent:&#10;            Type: HttpApi&#10;"
@@ -277,6 +282,45 @@
                 <skipITs>false</skipITs>
                 <quarkus.native.enabled>true</quarkus.native.enabled>
             </properties>
+        </profile>
+
+        <!--
+            Profile para rodar migrations Flyway FORA da Lambda (via scripts/db-migrate.sh).
+            Motivo: o hook afterRestore do SnapStart tem limite de ~10s; migrations pesadas
+            (ex.: o baseline) estouram esse limite e entram em loop de timeout. Aplicar por
+            aqui garante que o banco já esteja atualizado antes do deploy.
+            Uso: ./mvnw -Pflyway flyway:migrate -Dflyway.url=... -Dflyway.user=... -Dflyway.password=...
+            A versão do flyway-maven-plugin é fixada na MESMA do Quarkus (flyway-core) para
+            que o checksum registrado bata na validação feita pela Lambda.
+        -->
+        <profile>
+            <id>flyway</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-maven-plugin</artifactId>
+                        <version>11.9.2</version>
+                        <configuration>
+                            <locations>
+                                <location>filesystem:src/main/resources/db/migration</location>
+                            </locations>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.postgresql</groupId>
+                                <artifactId>postgresql</artifactId>
+                                <version>42.7.7</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.flywaydb</groupId>
+                                <artifactId>flyway-database-postgresql</artifactId>
+                                <version>11.9.2</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>

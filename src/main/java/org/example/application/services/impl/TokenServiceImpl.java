@@ -1,5 +1,7 @@
 package org.example.application.services.impl;
 
+import java.util.UUID;
+
 import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.jwt.build.Jwt;
 import io.smallrye.jwt.util.KeyUtils;
@@ -52,7 +54,7 @@ public class TokenServiceImpl implements TokenService {
             return Jwt.issuer(issuer)
                     .upn(user.getEmail())
                     .groups(Collections.singleton("USER"))
-                    .claim("userId", user.id)
+                    .claim("userId", user.id.toString())
                     .claim("userType", user.getUserType() != null ? user.getUserType().name() : "FREE")
                     .expiresIn(Duration.ofDays(7))
                     .sign(KeyUtils.readPrivateKey(privateKeyLocation));
@@ -67,7 +69,7 @@ public class TokenServiceImpl implements TokenService {
         try {
             return Jwt.issuer(issuer)
                     .upn(user.getEmail())
-                    .claim("userId", user.id)
+                    .claim("userId", user.id.toString())
                     .claim("typ", "refresh")
                     .expiresIn(Duration.ofDays(30))
                     .sign(KeyUtils.readPrivateKey(privateKeyLocation));

@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Baggagi email-worker (SES) — trip reminders (<12h) + document expiry alerts + product updates
+
+Parameters:
+  AppSecretsName:
+    Type: String
+    Default: baggagi/back/prod
+    Description: Secrets Manager JSON (DATABASE_URL, SES_*, APP_PUBLIC_URL, ...)
+  ReminderSchedule1:
+    Type: String
+    Default: cron(0 0 * * ? *)
+    Description: 1ª execução diária (UTC) — ex. 00:00
+  ReminderSchedule2:
+    Type: String
+    Default: cron(0 12 * * ? *)
+    Description: 2ª execução diária (UTC) — ex. 12:00
+  DocumentExpirySchedule:
+    Type: String
+    Default: cron(0 8 * * ? *)
+    Description: Execução diária (UTC) dos alertas de expiração de documentos — ex. 08:00
+
+Globals:
+  Function:
+    Timeout: 120
+    MemorySize: 256
+    Runtime: provided.al2023
+    Architectures:
+      - x86_64
+
+Resources:
+  EmailWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      FunctionName: baggagi-email-worker
+      Handler: bootstrap
+      CodeUri: .
+      Description: Envia e-mails SES (lembretes de viagem + atualizações de produto)
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonSESFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AppSecretsName}*'
+      Environment:
+        Variables:
+          # Preferir injetar DATABASE_URL completo no secret; fallback via resolve
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${AppSecretsName}:SecretString:DATABASE_URL::}}'
+          SES_ENABLED: !Sub '{{resolve:secretsmanager:${AppSecretsName}:SecretString:SES_ENABLED::}}'
+          SES_FROM_EMAIL: !Sub '{{resolve:secretsmanager:${AppSecretsName}:SecretString:SES_FROM_EMAIL::}}'
+          SES_FROM_NAME: !Sub '{{resolve:secretsmanager:${AppSecretsName}:SecretString:SES_FROM_NAME::}}'
+          AWS_SES_REGION: !Sub '{{resolve:secretsmanager:${AppSecretsName}:SecretString:AWS_SES_REGION::}}'
+          APP_PUBLIC_URL: !Sub '{{resolve:secretsmanager:${AppSecretsName}:SecretString:APP_PUBLIC_URL::}}'
+          EMAIL_TRIP_REMINDER_HOURS: '12'
+      Events:
+        ReminderMorning:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ReminderSchedule1
+            Description: Trip reminders — run 1/2
+            Input: '{"action":"trip_reminders"}'
+        ReminderEvening:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ReminderSchedule2
+            Description: Trip reminders — run 2/2
+            Input: '{"action":"trip_reminders"}'
+        DocumentExpiryCheck:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref DocumentExpirySchedule
+            Description: Document expiry alerts (passport/visa/international license/custom)
+            Input: '{"action":"document_expiry_reminders"}'
+
+Outputs:
+  EmailWorkerArn:
+    Description: ARN da Lambda email-worker
+    Value: !GetAtt EmailWorkerFunction.Arn
+  EmailWorkerName:
+    Value: !Ref EmailWorkerFunction

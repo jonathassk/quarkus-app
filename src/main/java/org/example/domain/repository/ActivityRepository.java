@@ -1,6 +1,9 @@
 package org.example.domain.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepository;
+import java.util.UUID;
+
+import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+
 import org.example.domain.entity.Activity;
 
-public class ActivityRepository implements PanacheRepository<Activity> {}
+public class ActivityRepository implements PanacheRepositoryBase<Activity, UUID> {}

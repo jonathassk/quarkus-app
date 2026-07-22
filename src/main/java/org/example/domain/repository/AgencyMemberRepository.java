@@ -1,6 +1,9 @@
 package org.example.domain.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepository;
+import java.util.UUID;
+
+import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyMember;
@@ -10,12 +13,12 @@ import java.util.List;
 import java.util.Optional;
 
 @ApplicationScoped
-public class AgencyMemberRepository implements PanacheRepository<AgencyMember> {
+public class AgencyMemberRepository implements PanacheRepositoryBase<AgencyMember, UUID> {
 
     /**
      * Retorna o vínculo de um usuário com uma agência específica, se existir.
      */
-    public Optional<AgencyMember> findByAgencyAndUser(Long agencyId, Long userId) {
+    public Optional<AgencyMember> findByAgencyAndUser(UUID agencyId, UUID userId) {
         return find("agency.id = :aid AND user.id = :uid",
                 io.quarkus.panache.common.Parameters.with("aid", agencyId).and("uid", userId))
                 .firstResultOptional();
@@ -24,21 +27,21 @@ public class AgencyMemberRepository implements PanacheRepository<AgencyMember> {
     /**
      * Retorna todos os membros de uma agência.
      */
-    public List<AgencyMember> findAllByAgency(Long agencyId) {
+    public List<AgencyMember> findAllByAgency(UUID agencyId) {
         return list("agency.id", agencyId);
     }
 
     /**
      * Retorna todas as agências às quais um usuário pertence.
      */
-    public List<AgencyMember> findAllByUser(Long userId) {
+    public List<AgencyMember> findAllByUser(UUID userId) {
         return list("user.id", userId);
     }
 
     /**
      * Verifica se o usuário pertence à agência com o papel mínimo informado.
      */
-    public boolean isMemberWithRole(Long agencyId, Long userId, AgencyRole minimumRole) {
+    public boolean isMemberWithRole(UUID agencyId, UUID userId, AgencyRole minimumRole) {
         return findByAgencyAndUser(agencyId, userId)
                 .map(m -> m.getAgencyRole().getHierarchyLevel() >= minimumRole.getHierarchyLevel())
                 .orElse(false);
@@ -48,7 +51,7 @@ public class AgencyMemberRepository implements PanacheRepository<AgencyMember> {
      * Retorna a agência de um usuário (caso pertença a exatamente uma), ou a primeira encontrada.
      * Útil para inferir a agência do contexto autenticado.
      */
-    public Optional<Agency> findPrimaryAgencyForUser(Long userId) {
+    public Optional<Agency> findPrimaryAgencyForUser(UUID userId) {
         return findAllByUser(userId).stream()
                 .findFirst()
                 .map(AgencyMember::getAgency);

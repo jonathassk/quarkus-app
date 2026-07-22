@@ -1,8 +1,10 @@
 package org.example.application.dto.document;
 
+import java.util.UUID;
+
 import lombok.Data;
 
 @Data
 public class ConfirmUploadRequest {
-    private Long documentId;
+    private UUID documentId;
 }

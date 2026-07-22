@@ -1,6 +1,9 @@
 package org.example.domain.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepository;
+import java.util.UUID;
+
+import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
@@ -13,13 +16,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-public class TripRepository implements PanacheRepository<Trip> {
+public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
 
     /**
      * Viagens onde o usuário é criador ou está em {@code trip_users}.
      */
     @Transactional
-    public List<Trip> findAllByLinkedUserId(Long userId) {
+    public List<Trip> findAllByLinkedUserId(UUID userId) {
         return getEntityManager()
                 .createQuery(
                         "SELECT DISTINCT t FROM Trip t LEFT JOIN t.users u "
@@ -31,7 +34,7 @@ public class TripRepository implements PanacheRepository<Trip> {
     }
 
     /** Criador da viagem ou participante em {@code trip_users}. */
-    public boolean isUserLinkedToTrip(Long tripId, Long userId) {
+    public boolean isUserLinkedToTrip(UUID tripId, UUID userId) {
         Long count = getEntityManager()
                 .createQuery(
                         "SELECT COUNT(t) FROM Trip t WHERE t.id = :tid AND ("
@@ -45,15 +48,15 @@ public class TripRepository implements PanacheRepository<Trip> {
     }
     
     @Transactional
-    public Trip findByIdWithLock(Long id) {
+    public Trip findByIdWithLock(UUID id) {
         return getEntityManager().find(Trip.class, id, LockModeType.PESSIMISTIC_WRITE);
     }
 
     @Transactional
-    public Trip updateTripUsers(Trip trip, List<User> users, Map<Long, String> userPermissions) {
+    public Trip updateTripUsers(Trip trip, List<User> users, Map<UUID, String> userPermissions) {
         EntityManager em = getEntityManager();
 
-        Map<Long, TripUser> currentUsers = trip.getUsers().stream()
+        Map<UUID, TripUser> currentUsers = trip.getUsers().stream()
             .collect(Collectors.toMap(tu -> tu.getUser().id, tu -> tu));
 
         for (User user : users) {
@@ -88,7 +91,7 @@ public class TripRepository implements PanacheRepository<Trip> {
         return getEntityManager().merge(trip);
     }
 
-    public Optional<TripUser> findTripUser(Long tripId, Long userId) {
+    public Optional<TripUser> findTripUser(UUID tripId, UUID userId) {
         return getEntityManager()
                 .createQuery(
                         "SELECT tu FROM TripUser tu WHERE tu.trip.id = :tid AND tu.user.id = :uid",
@@ -112,7 +115,7 @@ public class TripRepository implements PanacheRepository<Trip> {
     }
 
     @Transactional
-    public boolean removeTripMember(Trip trip, Long userId) {
+    public boolean removeTripMember(Trip trip, UUID userId) {
         Optional<TripUser> tripUser = findTripUser(trip.id, userId);
         if (tripUser.isEmpty()) {
             return false;
@@ -123,5 +126,34 @@ public class TripRepository implements PanacheRepository<Trip> {
         }
         getEntityManager().remove(tu);
         return true;
+    }
+
+    public int countTripMembers(UUID tripId) {
+        Number count =
+                (Number)
+                        getEntityManager()
+                                .createNativeQuery("SELECT count_trip_members(?1)")
+                                .setParameter(1, tripId)
+                                .getSingleResult();
+        return count != null ? count.intValue() : 0;
+    }
+
+    public List<UUID> listTripMemberUserIds(UUID tripId) {
+        Trip trip = findById(tripId);
+        if (trip == null) {
+            return List.of();
+        }
+        java.util.LinkedHashSet<UUID> memberIds = new java.util.LinkedHashSet<>();
+        if (trip.getCreatedBy() != null) {
+            memberIds.add(trip.getCreatedBy().id);
+        }
+        if (trip.getUsers() != null) {
+            for (TripUser tu : trip.getUsers()) {
+                if (tu.getUser() != null) {
+                    memberIds.add(tu.getUser().id);
+                }
+            }
+        }
+        return new java.util.ArrayList<>(memberIds);
     }
 }

@@ -2,6 +2,12 @@
   "plugins": {
     "neon-postgres": {
       "enabled": true
+    },
+    "deploy-on-aws": {
+      "enabled": true
+    },
+    "cloudflare": {
+      "enabled": true
     }
   }
 }

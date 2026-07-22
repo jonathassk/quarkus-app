@@ -1,13 +1,15 @@
 package org.example.application.dto.checklist;
 
+import java.util.UUID;
+
 import lombok.Builder;
 import lombok.Data;
 
 @Data
 @Builder
 public class TripChecklistItemResponse {
-    private Long id;
-    private Long tripId;
+    private UUID id;
+    private UUID tripId;
     private String title;
     private String notes;
     private Boolean completed;
