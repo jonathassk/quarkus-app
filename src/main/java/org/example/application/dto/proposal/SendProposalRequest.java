@@ -15,4 +15,8 @@ import lombok.*;
 public class SendProposalRequest {
     private String clientEmail;
     private String clientName;
+    /** Dias de validade a partir do envio (default 7). Ignorado se {@code proposalExpiresAt} for informado. */
+    private Integer expiresInDays;
+    /** Validade absoluta (opcional). */
+    private java.time.Instant proposalExpiresAt;
 }

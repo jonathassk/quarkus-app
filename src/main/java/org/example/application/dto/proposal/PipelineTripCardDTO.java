@@ -29,4 +29,8 @@ public class PipelineTripCardDTO {
     private Instant updatedAt;
     private UUID createdBy;
     private String createdByName;
+    private UUID assignedConsultantId;
+    private String assignedConsultantName;
+    private UUID clientId;
+    private String clientName;
 }

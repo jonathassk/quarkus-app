@@ -91,6 +91,18 @@ public class PaymentController {
     @ConfigProperty(name = "stripe.price.anual-agent")
     Optional<String> priceAnualAgent;
 
+    @ConfigProperty(name = "stripe.price.mensal-agent-starter")
+    Optional<String> priceMensalAgentStarter;
+
+    @ConfigProperty(name = "stripe.price.anual-agent-starter")
+    Optional<String> priceAnualAgentStarter;
+
+    @ConfigProperty(name = "stripe.price.mensal-agent-team")
+    Optional<String> priceMensalAgentTeam;
+
+    @ConfigProperty(name = "stripe.price.anual-agent-team")
+    Optional<String> priceAnualAgentTeam;
+
     @ConfigProperty(name = "quarkus.http.cors.origins", defaultValue = "http://localhost:3000")
     String corsOriginsConfig;
 
@@ -458,14 +470,15 @@ public class PaymentController {
                 upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
                 log.info("Workspace {} updated to B2C_PREMIUM", targetId);
             }
-        } else if ("MENSAL_TRIP_AGENT".equals(paymentType) || "ANUAL_TRIP_AGENT".equals(paymentType)) {
+        } else if (isAgencyPaymentType(paymentType)) {
             Workspace workspace = Workspace.findById(targetId);
             if (workspace != null) {
-                workspace.setPlanType("B2B_PRO");
+                String agencyPlan = resolveAgencyPlanType(paymentType);
+                workspace.setPlanType(agencyPlan);
                 workspace.persist();
                 upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
-                activateAgencyForWorkspaceOwner(workspace, stripeSubscriptionId);
-                log.info("Workspace {} updated to B2B_PRO", targetId);
+                activateAgencyForWorkspaceOwner(workspace, stripeSubscriptionId, agencyPlan);
+                log.info("Workspace {} updated to {}", targetId, agencyPlan);
             }
         } else if ("UNITARIO".equals(paymentType)) {
             tripUnlockService.grantUnitario(
@@ -478,9 +491,10 @@ public class PaymentController {
     }
 
     /**
-     * Garante Agency B2B_PRO + membership OWNER para o dono do workspace.
+     * Garante Agency + membership OWNER para o dono do workspace.
      */
-    private void activateAgencyForWorkspaceOwner(Workspace workspace, String stripeSubscriptionId) {
+    private void activateAgencyForWorkspaceOwner(
+            Workspace workspace, String stripeSubscriptionId, String agencyPlanType) {
         WorkspaceMember ownerMember = WorkspaceMember
                 .find("workspace.id = ?1 and role = ?2", workspace.id, org.example.domain.enums.WorkspaceRole.OWNER)
                 .firstResult();
@@ -496,8 +510,8 @@ public class PaymentController {
                 ? workspace.getName()
                 : (owner.getFullName() != null ? owner.getFullName() : "Agência");
         var agency = agencyService.ensureAgencyForOwner(owner, agencyName);
-        agencyService.activateSubscription(agency, stripeSubscriptionId);
-        log.info("Agency {} activated as B2B_PRO for user {}", agency.id, owner.id);
+        agencyService.activateSubscription(agency, stripeSubscriptionId, agencyPlanType);
+        log.info("Agency {} activated as {} for user {}", agency.id, agencyPlanType, owner.id);
     }
 
     /**
@@ -539,12 +553,40 @@ public class PaymentController {
                 return priceMensal.orElse("");
             case "ANUAL":
                 return priceAnual.orElse("");
+            case "MENSAL_TRIP_AGENT_STARTER":
+                return priceMensalAgentStarter.orElse("");
+            case "ANUAL_TRIP_AGENT_STARTER":
+                return priceAnualAgentStarter.orElse("");
             case "MENSAL_TRIP_AGENT":
                 return priceMensalAgent.orElse("");
             case "ANUAL_TRIP_AGENT":
                 return priceAnualAgent.orElse("");
+            case "MENSAL_TRIP_AGENT_TEAM":
+                return priceMensalAgentTeam.orElse("");
+            case "ANUAL_TRIP_AGENT_TEAM":
+                return priceAnualAgentTeam.orElse("");
             default:
                 return null;
         }
+    }
+
+    private static boolean isAgencyPaymentType(String paymentType) {
+        return "MENSAL_TRIP_AGENT_STARTER".equals(paymentType)
+                || "ANUAL_TRIP_AGENT_STARTER".equals(paymentType)
+                || "MENSAL_TRIP_AGENT".equals(paymentType)
+                || "ANUAL_TRIP_AGENT".equals(paymentType)
+                || "MENSAL_TRIP_AGENT_TEAM".equals(paymentType)
+                || "ANUAL_TRIP_AGENT_TEAM".equals(paymentType);
+    }
+
+    /** Essencial → B2B_STARTER; Solo → B2B_PRO; Team → B2B_TEAM. */
+    private static String resolveAgencyPlanType(String paymentType) {
+        if (paymentType != null && paymentType.contains("STARTER")) {
+            return "B2B_STARTER";
+        }
+        if (paymentType != null && paymentType.contains("TEAM")) {
+            return "B2B_TEAM";
+        }
+        return "B2B_PRO";
     }
 }

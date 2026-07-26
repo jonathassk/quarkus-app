@@ -55,4 +55,8 @@ public enum B2bTripLogAction {
     PROPOSAL_PAYMENT_PENDING,
     PROPOSAL_PAYMENT_RECEIVED,
     PROPOSAL_CONFIRMED,
+
+    // ── CRM / atribuição ──────────────────────────────────────────────────────
+    TRIP_ASSIGNED,
+    CLIENT_LINKED,
 }

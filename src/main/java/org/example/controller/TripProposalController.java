@@ -10,7 +10,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.example.application.dto.agency.LinkTripClientRequest;
 import org.example.application.dto.common.ApiErrorBody;
+import org.example.application.dto.proposal.AssignTripConsultantRequest;
 import org.example.application.dto.proposal.SendProposalRequest;
 import org.example.application.dto.proposal.UpdateProposalStatusRequest;
 import org.example.application.dto.proposal.UpdateTripPricingRequest;
@@ -91,6 +93,35 @@ public class TripProposalController {
                 Response.ok(TripMapper.mapToTripResponseDTO(
                         proposalService.updateProposalStatus(
                                 tripId, userId, request != null ? request.getProposalStatus() : null))).build());
+    }
+
+    @PATCH
+    @Path("/{tripId}/assignment")
+    @Transactional
+    @Operation(summary = "Atribuir consultor responsável (OWNER)")
+    public Response assignConsultant(
+            @PathParam("tripId") UUID tripId,
+            AssignTripConsultantRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(TripMapper.mapToTripResponseDTO(
+                        proposalService.assignConsultant(tripId, userId, request))).build());
+    }
+
+    @PATCH
+    @Path("/{tripId}/client")
+    @Transactional
+    @Operation(summary = "Vincular cliente CRM à viagem")
+    public Response linkClient(
+            @PathParam("tripId") UUID tripId,
+            LinkTripClientRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(TripMapper.mapToTripResponseDTO(
+                        proposalService.linkClient(
+                                tripId,
+                                userId,
+                                request != null ? request.getClientId() : null))).build());
     }
 
     private Response withUser(HttpHeaders headers, java.util.function.Function<UUID, Response> action) {

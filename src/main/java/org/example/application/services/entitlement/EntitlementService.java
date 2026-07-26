@@ -221,7 +221,7 @@ public class EntitlementService {
         UserType userType = user.getUserType() != null ? user.getUserType() : UserType.FREE;
 
         // Plano do workspace manda; PREMIUM no user reforça B2C quando workspace ainda é FREE.
-        if ("B2B_PRO".equals(plan)) {
+        if (isPaidB2bPlan(plan)) {
             return PlanLimits.b2bPro(plan);
         }
         if ("B2C_PREMIUM".equals(plan) || userType == UserType.PREMIUM) {
@@ -266,12 +266,23 @@ public class EntitlementService {
                     .description("Mesmos benefícios com desconto")
                     .build());
             list.add(EntitlementsDTO.SuggestedUpgrade.builder()
-                    .paymentType("MENSAL_TRIP_AGENT")
-                    .label("Plano Agência")
-                    .description("Propostas white-label e pipeline B2B")
+                    .paymentType("MENSAL_TRIP_AGENT_STARTER")
+                    .label("Agência Essencial")
+                    .description("Pipeline B2B com marca Baggagi — a partir de R$ 45/mês")
                     .build());
         }
         return list;
+    }
+
+    private static boolean isPaidB2bPlan(String plan) {
+        if (plan == null || plan.isBlank()) {
+            return false;
+        }
+        String p = plan.trim().toUpperCase();
+        if ("B2B_FREE".equals(p) || "B2B_INACTIVE".equals(p)) {
+            return false;
+        }
+        return p.startsWith("B2B_");
     }
 
     private record PlanLimits(

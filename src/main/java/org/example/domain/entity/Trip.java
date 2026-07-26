@@ -117,6 +117,23 @@ public class Trip extends PanacheEntityBase {
     @Column(name = "proposal_sent_at")
     private Instant proposalSentAt;
 
+    /** Após esta data a proposta pública não aceita aprovação nem pagamento. */
+    @Column(name = "proposal_expires_at")
+    private Instant proposalExpiresAt;
+
+    @Column(name = "proposal_reject_reason", columnDefinition = "TEXT")
+    private String proposalRejectReason;
+
+    /** Cliente CRM da agência (épico 5). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "client_id")
+    private AgencyClient client;
+
+    /** Consultor responsável — owner pode reatribuir. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_consultant_id")
+    private User assignedConsultant;
+
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TripProposalTier> proposalTiers = new ArrayList<>();

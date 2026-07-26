@@ -14,6 +14,7 @@ import org.example.application.dto.agency.*;
 import org.example.application.dto.common.ApiErrorBody;
 import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.services.TokenService;
+import org.example.application.services.agency.AgencyClientService;
 import org.example.application.services.agency.AgencyService;
 import org.example.application.services.proposal.ProposalService;
 import org.example.domain.entity.AgencyMember;
@@ -37,6 +38,7 @@ public class AgencyController {
     private final TokenService tokenService;
     private final UserRepository userRepository;
     private final AgencyService agencyService;
+    private final AgencyClientService agencyClientService;
     private final ProposalService proposalService;
     private final ObjectStorageService objectStorageService;
 
@@ -109,21 +111,41 @@ public class AgencyController {
 
     @GET
     @Path("/team")
-    @Operation(summary = "Listar membros da agência (OWNER)")
+    @Operation(summary = "Listar membros e convites pendentes (OWNER)")
     public Response listTeam(@Context HttpHeaders headers) {
         return withUser(headers, userId ->
-                Response.ok(agencyService.listMembers(userId)).build());
+                Response.ok(agencyService.listTeam(userId)).build());
     }
 
     @POST
     @Path("/team")
     @Transactional
-    @Operation(summary = "Convidar membro (OWNER)")
+    @Operation(summary = "Convidar membro — ACTIVE se já tem conta, PENDING caso contrário (OWNER)")
     public Response inviteMember(InviteAgencyMemberRequest request, @Context HttpHeaders headers) {
         return withUser(headers, userId ->
                 Response.status(Response.Status.CREATED)
                         .entity(agencyService.inviteMember(userId, request))
                         .build());
+    }
+
+    @POST
+    @Path("/team/invites/{token}/accept")
+    @Transactional
+    @Operation(summary = "Aceitar convite pendente da agência")
+    public Response acceptInvite(@PathParam("token") String token, @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyService.acceptInvite(userId, token)).build());
+    }
+
+    @DELETE
+    @Path("/team/invites/{inviteId}")
+    @Transactional
+    @Operation(summary = "Revogar convite pendente (OWNER)")
+    public Response revokeInvite(@PathParam("inviteId") UUID inviteId, @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            agencyService.revokeInvite(userId, inviteId);
+            return Response.noContent().build();
+        });
     }
 
     @DELETE
@@ -133,6 +155,60 @@ public class AgencyController {
     public Response removeMember(@PathParam("userId") UUID memberUserId, @Context HttpHeaders headers) {
         return withUser(headers, userId -> {
             agencyService.removeMember(userId, memberUserId);
+            return Response.noContent().build();
+        });
+    }
+
+    @GET
+    @Path("/clients")
+    @Operation(summary = "Listar clientes CRM da agência")
+    public Response listClients(
+            @QueryParam("q") String q,
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("50") int size,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyClientService.list(userId, q, page, size)).build());
+    }
+
+    @POST
+    @Path("/clients")
+    @Transactional
+    @Operation(summary = "Criar cliente CRM")
+    public Response createClient(UpsertAgencyClientRequest request, @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.status(Response.Status.CREATED)
+                        .entity(agencyClientService.create(userId, request))
+                        .build());
+    }
+
+    @GET
+    @Path("/clients/{clientId}")
+    @Operation(summary = "Ficha 360 do cliente")
+    public Response getClient(@PathParam("clientId") UUID clientId, @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyClientService.get(userId, clientId)).build());
+    }
+
+    @PATCH
+    @Path("/clients/{clientId}")
+    @Transactional
+    @Operation(summary = "Atualizar cliente CRM")
+    public Response updateClient(
+            @PathParam("clientId") UUID clientId,
+            UpsertAgencyClientRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyClientService.update(userId, clientId, request)).build());
+    }
+
+    @DELETE
+    @Path("/clients/{clientId}")
+    @Transactional
+    @Operation(summary = "Remover cliente CRM")
+    public Response deleteClient(@PathParam("clientId") UUID clientId, @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            agencyClientService.delete(userId, clientId);
             return Response.noContent().build();
         });
     }
@@ -150,10 +226,26 @@ public class AgencyController {
 
     @GET
     @Path("/pipeline")
-    @Operation(summary = "Kanban de propostas da agência")
-    public Response pipeline(@Context HttpHeaders headers) {
-        return withUser(headers, userId ->
-                Response.ok(proposalService.listPipeline(userId)).build());
+    @Operation(summary = "Kanban de propostas da agência (filtros + paginação)")
+    public Response pipeline(
+            @QueryParam("status") String status,
+            @QueryParam("consultantId") UUID consultantId,
+            @QueryParam("q") String q,
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("100") int size,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            org.example.domain.enums.ProposalStatus parsed = null;
+            if (status != null && !status.isBlank()) {
+                try {
+                    parsed = org.example.domain.enums.ProposalStatus.valueOf(status.trim().toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    throw new BadRequestException("Invalid proposal status: " + status);
+                }
+            }
+            return Response.ok(proposalService.listPipeline(
+                    userId, parsed, consultantId, q, page, size)).build();
+        });
     }
 
     @GET

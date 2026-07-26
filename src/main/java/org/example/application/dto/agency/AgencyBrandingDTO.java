@@ -19,4 +19,6 @@ public class AgencyBrandingDTO {
     private BigDecimal markupPercentage;
     private String planType;
     private String agencyRole;
+    /** false no Essencial: proposta pública usa marca Baggagi. */
+    private Boolean whiteLabelEnabled;
 }

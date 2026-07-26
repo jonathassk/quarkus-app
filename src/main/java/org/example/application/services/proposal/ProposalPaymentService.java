@@ -91,6 +91,9 @@ public class ProposalPaymentService {
             throw new BadRequestException(
                     "Checkout só é permitido após a aprovação da proposta (status atual: " + status + ")");
         }
+        if (ProposalService.isExpired(trip)) {
+            throw new BadRequestException("Esta proposta expirou e não aceita mais pagamento");
+        }
 
         BigDecimal finalPrice = trip.getFinalPrice();
         if (finalPrice == null || finalPrice.compareTo(BigDecimal.ZERO) <= 0) {

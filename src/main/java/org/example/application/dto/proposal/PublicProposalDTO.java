@@ -6,6 +6,7 @@ import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.domain.enums.ProposalStatus;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -33,6 +34,10 @@ public class PublicProposalDTO {
     private Boolean paymentRequired;
     /** Valor sugerido de sinal (30% do finalPrice). */
     private BigDecimal depositAmount;
+    /** Instant ISO — null se sem validade definida. */
+    private Instant proposalExpiresAt;
+    /** true quando proposalExpiresAt já passou. */
+    private Boolean expired;
     private AgencyBrandingDTO agency;
     private List<TripSegmentDTO> segments;
     private List<ProposalTierDTO> tiers;

@@ -9,17 +9,24 @@ import jakarta.ws.rs.NotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.agency.*;
 import org.example.domain.entity.Agency;
+import org.example.domain.entity.AgencyInvite;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.entity.User;
+import org.example.domain.enums.AgencyInviteStatus;
 import org.example.domain.enums.AgencyRole;
+import org.example.domain.repository.AgencyInviteRepository;
 import org.example.domain.repository.AgencyMemberRepository;
 import org.example.domain.repository.AgencyRepository;
 import org.example.domain.repository.B2bTripLogRepository;
 import org.example.domain.repository.UserRepository;
+import org.example.infrastructure.email.EmailWorkerInvoker;
 import org.example.infrastructure.storage.ObjectStorageService;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.text.Normalizer;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -32,17 +39,28 @@ public class AgencyService {
 
     private static final Pattern NON_SLUG = Pattern.compile("[^a-z0-9]+");
     private static final Pattern HEX_COLOR = Pattern.compile("^#[0-9A-Fa-f]{6}$");
+    private static final Duration INVITE_TTL = Duration.ofDays(14);
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final char[] TOKEN_ALPHABET =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789".toCharArray();
 
     @Inject
     AgencyRepository agencyRepository;
     @Inject
     AgencyMemberRepository agencyMemberRepository;
     @Inject
+    AgencyInviteRepository agencyInviteRepository;
+    @Inject
     UserRepository userRepository;
     @Inject
     B2bTripLogRepository auditLogRepository;
     @Inject
     ObjectStorageService objectStorageService;
+    @Inject
+    EmailWorkerInvoker emailWorkerInvoker;
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "app.public-url")
+    String appPublicUrl;
 
     public Optional<AgencyMember> requireMembership(UUID userId) {
         List<AgencyMember> memberships = agencyMemberRepository.findAllByUser(userId);
@@ -133,8 +151,8 @@ public class AgencyService {
         Agency agency = Agency.builder()
                 .name(baseName)
                 .slug(slug)
-                .primaryColor("#000000")
-                .planType("B2B_PRO")
+                .primaryColor("#134e4a")
+                .planType("B2B_INACTIVE")
                 .markupPercentage(BigDecimal.ZERO)
                 .build();
         agencyRepository.persist(agency);
@@ -151,11 +169,32 @@ public class AgencyService {
 
     @Transactional
     public void activateSubscription(Agency agency, String stripeSubscriptionId) {
-        agency.setPlanType("B2B_PRO");
+        activateSubscription(agency, stripeSubscriptionId, "B2B_PRO");
+    }
+
+    @Transactional
+    public void activateSubscription(Agency agency, String stripeSubscriptionId, String planType) {
+        String plan = planType != null && !planType.isBlank() ? planType.trim().toUpperCase() : "B2B_PRO";
+        agency.setPlanType(plan);
         if (stripeSubscriptionId != null && !stripeSubscriptionId.isBlank()) {
             agency.setStripeSubscriptionId(stripeSubscriptionId);
         }
         agencyRepository.persist(agency);
+    }
+
+    /** White-label (logo/cores da agência na proposta) — Solo e Team. Essencial usa marca Baggagi. */
+    public static boolean hasWhiteLabel(String planType) {
+        if (planType == null || planType.isBlank()) {
+            return false;
+        }
+        String plan = planType.trim().toUpperCase();
+        return "B2B_PRO".equals(plan)
+                || "B2B_SOLO".equals(plan)
+                || "B2B_TEAM".equals(plan);
+    }
+
+    public static boolean hasWhiteLabel(Agency agency) {
+        return agency != null && hasWhiteLabel(agency.getPlanType());
     }
 
     @Transactional
@@ -165,42 +204,168 @@ public class AgencyService {
         agencyRepository.persist(agency);
     }
 
-    public List<AgencyMemberDTO> listMembers(UUID userId) {
+    public AgencyTeamDTO listTeam(UUID userId) {
         AgencyMember actor = requireMembershipOrThrow(userId);
-        if (actor.getAgencyRole() != AgencyRole.AGENCY_OWNER) {
-            throw new ForbiddenException("Only agency owners can list team members");
-        }
-        return agencyMemberRepository.findAllByAgency(actor.getAgency().id).stream()
+        List<AgencyMemberDTO> members = agencyMemberRepository.findAllByAgency(actor.getAgency().id).stream()
                 .map(this::toMemberDto)
                 .toList();
+        List<AgencyInviteDTO> pending = List.of();
+        if (actor.getAgencyRole() == AgencyRole.AGENCY_OWNER) {
+            pending = agencyInviteRepository.findPendingByAgency(actor.getAgency().id).stream()
+                    .map(this::toInviteDto)
+                    .toList();
+        }
+        return AgencyTeamDTO.builder().members(members).pendingInvites(pending).build();
+    }
+
+    /** @deprecated use {@link #listTeam} */
+    public List<AgencyMemberDTO> listMembers(UUID userId) {
+        return listTeam(userId).getMembers();
     }
 
     @Transactional
-    public AgencyMemberDTO inviteMember(UUID actorUserId, InviteAgencyMemberRequest request) {
+    public InviteAgencyMemberResponse inviteMember(UUID actorUserId, InviteAgencyMemberRequest request) {
         AgencyMember actor = requireOwner(actorUserId);
         if (request.getEmail() == null || request.getEmail().isBlank()) {
             throw new BadRequestException("email is required");
         }
-        User invitee = userRepository.findByEmail(request.getEmail().trim().toLowerCase(Locale.ROOT))
-                .orElseThrow(() -> new NotFoundException("User not found with email: " + request.getEmail()));
-        Optional<AgencyMember> existing =
-                agencyMemberRepository.findByAgencyAndUser(actor.getAgency().id, invitee.id);
-        if (existing.isPresent()) {
-            throw new BadRequestException("User is already a member of this agency");
-        }
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         AgencyRole role = request.getAgencyRole() != null
                 ? request.getAgencyRole()
                 : AgencyRole.AGENCY_CONSULTANT;
         if (role == AgencyRole.AGENCY_OWNER) {
             throw new BadRequestException("Cannot invite another OWNER via this endpoint");
         }
-        AgencyMember member = AgencyMember.builder()
+
+        Optional<User> existingUser = userRepository.findByEmail(email);
+        if (existingUser.isPresent()) {
+            User invitee = existingUser.get();
+            Optional<AgencyMember> existing =
+                    agencyMemberRepository.findByAgencyAndUser(actor.getAgency().id, invitee.id);
+            if (existing.isPresent()) {
+                throw new BadRequestException("User is already a member of this agency");
+            }
+            AgencyMember member = AgencyMember.builder()
+                    .agency(actor.getAgency())
+                    .user(invitee)
+                    .agencyRole(role)
+                    .build();
+            agencyMemberRepository.persist(member);
+            return InviteAgencyMemberResponse.builder()
+                    .status("ACTIVE")
+                    .member(toMemberDto(member))
+                    .build();
+        }
+
+        agencyInviteRepository.findPendingByAgencyAndEmail(actor.getAgency().id, email)
+                .ifPresent(pending -> {
+                    pending.setStatus(AgencyInviteStatus.REVOKED);
+                    agencyInviteRepository.persist(pending);
+                });
+
+        AgencyInvite invite = AgencyInvite.builder()
                 .agency(actor.getAgency())
-                .user(invitee)
+                .email(email)
                 .agencyRole(role)
+                .token(generateInviteToken())
+                .status(AgencyInviteStatus.PENDING)
+                .invitedBy(actor.getUser())
+                .expiresAt(Instant.now().plus(INVITE_TTL))
+                .build();
+        agencyInviteRepository.persist(invite);
+
+        String acceptUrl = publicUrl("/settings/team?invite=" + invite.getToken());
+        emailWorkerInvoker.enqueueDirectEmail(
+                email,
+                "Convite para a equipe " + actor.getAgency().getName(),
+                "Você foi convidado para a agência " + actor.getAgency().getName()
+                        + ". Crie ou acesse sua conta e abra: " + acceptUrl,
+                "<p>Você foi convidado para a agência <strong>"
+                        + actor.getAgency().getName()
+                        + "</strong>.</p><p><a href=\"" + acceptUrl
+                        + "\">Aceitar convite</a></p>");
+
+        return InviteAgencyMemberResponse.builder()
+                .status("PENDING")
+                .invite(toInviteDto(invite))
+                .build();
+    }
+
+    @Transactional
+    public AgencyMemberDTO acceptInvite(UUID userId, String token) {
+        AgencyInvite invite = agencyInviteRepository.findByToken(token)
+                .orElseThrow(() -> new NotFoundException("Invite not found"));
+        if (!invite.isPendingAndValid()) {
+            throw new BadRequestException("Invite is no longer valid");
+        }
+        User user = userRepository.findById(userId);
+        if (user == null) {
+            throw new NotFoundException("User not found");
+        }
+        if (user.getEmail() == null
+                || !user.getEmail().trim().equalsIgnoreCase(invite.getEmail())) {
+            throw new ForbiddenException("Invite email does not match the logged-in user");
+        }
+        Optional<AgencyMember> existing =
+                agencyMemberRepository.findByAgencyAndUser(invite.getAgency().id, userId);
+        if (existing.isPresent()) {
+            invite.setStatus(AgencyInviteStatus.ACCEPTED);
+            invite.setAcceptedAt(Instant.now());
+            invite.setAcceptedUser(user);
+            agencyInviteRepository.persist(invite);
+            return toMemberDto(existing.get());
+        }
+        AgencyMember member = AgencyMember.builder()
+                .agency(invite.getAgency())
+                .user(user)
+                .agencyRole(invite.getAgencyRole())
                 .build();
         agencyMemberRepository.persist(member);
+        invite.setStatus(AgencyInviteStatus.ACCEPTED);
+        invite.setAcceptedAt(Instant.now());
+        invite.setAcceptedUser(user);
+        agencyInviteRepository.persist(invite);
         return toMemberDto(member);
+    }
+
+    @Transactional
+    public void revokeInvite(UUID actorUserId, UUID inviteId) {
+        AgencyMember actor = requireOwner(actorUserId);
+        AgencyInvite invite = agencyInviteRepository.findById(inviteId);
+        if (invite == null || invite.getAgency() == null
+                || !invite.getAgency().id.equals(actor.getAgency().id)) {
+            throw new NotFoundException("Invite not found");
+        }
+        invite.setStatus(AgencyInviteStatus.REVOKED);
+        agencyInviteRepository.persist(invite);
+    }
+
+    private String generateInviteToken() {
+        char[] buf = new char[32];
+        for (int i = 0; i < buf.length; i++) {
+            buf[i] = TOKEN_ALPHABET[RANDOM.nextInt(TOKEN_ALPHABET.length)];
+        }
+        return new String(buf);
+    }
+
+    private String publicUrl(String path) {
+        String base = appPublicUrl != null ? appPublicUrl.trim() : "";
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + path;
+    }
+
+    private AgencyInviteDTO toInviteDto(AgencyInvite invite) {
+        return AgencyInviteDTO.builder()
+                .id(invite.id)
+                .email(invite.getEmail())
+                .agencyRole(invite.getAgencyRole())
+                .status(invite.getStatus())
+                .expiresAt(invite.getExpiresAt())
+                .createdAt(invite.getCreatedAt())
+                .invitedByEmail(invite.getInvitedBy() != null ? invite.getInvitedBy().getEmail() : null)
+                .build();
     }
 
     @Transactional
@@ -256,11 +421,29 @@ public class AgencyService {
                 .markupPercentage(agency.getMarkupPercentage())
                 .planType(agency.getPlanType())
                 .agencyRole(role != null ? role.name() : null)
+                .whiteLabelEnabled(hasWhiteLabel(agency))
                 .build();
     }
 
-    /** Branding público (sem markup). */
+    private static final String BAGGAGI_BRAND_NAME = "Baggagi";
+    private static final String BAGGAGI_PRIMARY_COLOR = "#134e4a";
+
+    /** Branding público (sem markup). Essencial: marca Baggagi, sem white-label. */
     public AgencyBrandingDTO toPublicBrandingDto(Agency agency) {
+        if (!hasWhiteLabel(agency)) {
+            return AgencyBrandingDTO.builder()
+                    .id(agency.id)
+                    .name(BAGGAGI_BRAND_NAME)
+                    .slug(agency.getSlug())
+                    .logoUrl(null)
+                    .primaryColor(BAGGAGI_PRIMARY_COLOR)
+                    .whatsappNumber(agency.getWhatsappNumber())
+                    .planType(null)
+                    .markupPercentage(null)
+                    .agencyRole(null)
+                    .whiteLabelEnabled(false)
+                    .build();
+        }
         return AgencyBrandingDTO.builder()
                 .id(agency.id)
                 .name(agency.getName())
@@ -271,6 +454,7 @@ public class AgencyService {
                 .planType(null)
                 .markupPercentage(null)
                 .agencyRole(null)
+                .whiteLabelEnabled(true)
                 .build();
     }
 

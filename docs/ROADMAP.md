@@ -173,7 +173,7 @@ Hoje não existe nenhuma notificação in-app — apenas e-mail via worker. Uma 
 
 ## Épico 4 — Proposta B2B madura
 
-**B2B · Esforço M · Depende de 0.3, 0.4 e 2.2**
+**B2B · Esforço M · Depende de 0.3, 0.4 e 2.2 · Status: implementado (2026-07-26)**
 
 O esqueleto existe (pricing, tiers, `shareCode`, aprovação). Falta o que dá segurança jurídica e fecha venda.
 
@@ -190,7 +190,7 @@ O esqueleto existe (pricing, tiers, `shareCode`, aprovação). Falta o que dá s
 
 ## Épico 5 — Pipeline unificado + CRM leve
 
-**B2B · Esforço G · Depende de 4**
+**B2B · Esforço G · Depende de 4 · Status: implementado (2026-07-26)**
 
 A API de pipeline e analytics existe; a `/business` no front ainda é protótipo com estado local. E não há **cliente** como entidade — só viagens soltas.
 

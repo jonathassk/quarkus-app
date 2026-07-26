@@ -172,6 +172,99 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
         return list("agency.id = ?1 AND proposalStatus = ?2 ORDER BY updatedAt DESC", agencyId, status);
     }
 
+    public List<Trip> findByClientId(UUID clientId) {
+        return list("client.id = ?1 ORDER BY updatedAt DESC", clientId);
+    }
+
+    /**
+     * Pipeline com filtros e paginação no banco.
+     *
+     * @param scopeUserId quando não-null, restringe a criador ou consultor atribuído
+     */
+    public List<Trip> findPipeline(
+            UUID agencyId,
+            org.example.domain.enums.ProposalStatus status,
+            UUID consultantId,
+            String q,
+            UUID scopeUserId,
+            int page,
+            int size) {
+        StringBuilder jpql = new StringBuilder("FROM Trip t WHERE t.agency.id = :agencyId");
+        var em = getEntityManager();
+        if (status != null) {
+            jpql.append(" AND t.proposalStatus = :status");
+        }
+        if (consultantId != null) {
+            jpql.append(" AND t.assignedConsultant.id = :consultantId");
+        }
+        if (scopeUserId != null) {
+            jpql.append(" AND (t.createdBy.id = :scopeUserId OR t.assignedConsultant.id = :scopeUserId)");
+        }
+        if (q != null && !q.isBlank()) {
+            jpql.append(" AND (lower(t.name) LIKE :q OR lower(coalesce(t.proposalClientEmail,'')) LIKE :q"
+                    + " OR lower(coalesce(t.proposalClientName,'')) LIKE :q)");
+        }
+        jpql.append(" ORDER BY t.updatedAt DESC");
+        var query = em.createQuery(jpql.toString(), Trip.class);
+        query.setParameter("agencyId", agencyId);
+        if (status != null) {
+            query.setParameter("status", status);
+        }
+        if (consultantId != null) {
+            query.setParameter("consultantId", consultantId);
+        }
+        if (scopeUserId != null) {
+            query.setParameter("scopeUserId", scopeUserId);
+        }
+        if (q != null && !q.isBlank()) {
+            query.setParameter("q", "%" + q.trim().toLowerCase() + "%");
+        }
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        query.setFirstResult(safePage * safeSize);
+        query.setMaxResults(safeSize);
+        return query.getResultList();
+    }
+
+    public long countPipeline(
+            UUID agencyId,
+            org.example.domain.enums.ProposalStatus status,
+            UUID consultantId,
+            String q,
+            UUID scopeUserId) {
+        StringBuilder jpql = new StringBuilder("SELECT COUNT(t) FROM Trip t WHERE t.agency.id = :agencyId");
+        var em = getEntityManager();
+        if (status != null) {
+            jpql.append(" AND t.proposalStatus = :status");
+        }
+        if (consultantId != null) {
+            jpql.append(" AND t.assignedConsultant.id = :consultantId");
+        }
+        if (scopeUserId != null) {
+            jpql.append(" AND (t.createdBy.id = :scopeUserId OR t.assignedConsultant.id = :scopeUserId)");
+        }
+        if (q != null && !q.isBlank()) {
+            jpql.append(" AND (lower(t.name) LIKE :q OR lower(coalesce(t.proposalClientEmail,'')) LIKE :q"
+                    + " OR lower(coalesce(t.proposalClientName,'')) LIKE :q)");
+        }
+        var query = em.createQuery(jpql.toString(), Long.class);
+        query.setParameter("agencyId", agencyId);
+        if (status != null) {
+            query.setParameter("status", status);
+        }
+        if (consultantId != null) {
+            query.setParameter("consultantId", consultantId);
+        }
+        if (scopeUserId != null) {
+            query.setParameter("scopeUserId", scopeUserId);
+        }
+        if (q != null && !q.isBlank()) {
+            query.setParameter("q", "%" + q.trim().toLowerCase() + "%");
+        }
+        Long count = query.getSingleResult();
+        return count != null ? count : 0L;
+    }
+
     /** Viagens ativas do usuário (criador ou membro) vinculadas a um workspace. */
     public long countActiveByUserAndWorkspace(UUID userId, UUID workspaceId) {
         Long count = getEntityManager()

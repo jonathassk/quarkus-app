@@ -18,19 +18,25 @@ import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentVisibility;
 import org.example.domain.enums.NotificationKind;
 import org.example.domain.enums.ProposalStatus;
+import org.example.domain.repository.AgencyClientRepository;
 import org.example.domain.repository.AgencyMemberRepository;
+import org.example.domain.repository.ProposalAcceptanceRepository;
 import org.example.domain.repository.TripProposalTierRepository;
 import org.example.domain.repository.TripRepository;
+import org.example.domain.repository.UserRepository;
 import org.example.infrastructure.mapper.TripMapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 @Slf4j
@@ -45,12 +51,20 @@ public class ProposalService {
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s.]+\\.[^@\\s]+$");
 
+    private static final int DEFAULT_PROPOSAL_TTL_DAYS = 7;
+
     @Inject
     TripRepository tripRepository;
     @Inject
     TripProposalTierRepository tierRepository;
     @Inject
+    ProposalAcceptanceRepository acceptanceRepository;
+    @Inject
     AgencyMemberRepository agencyMemberRepository;
+    @Inject
+    AgencyClientRepository agencyClientRepository;
+    @Inject
+    UserRepository userRepository;
     @Inject
     AgencyService agencyService;
     @Inject
@@ -78,9 +92,52 @@ public class ProposalService {
     }
 
     @Transactional
-    public PublicProposalDTO approvePublicProposal(String shareCode) {
+    public PublicProposalDTO approvePublicProposal(
+            String shareCode,
+            ApprovePublicProposalRequest request,
+            String clientIp,
+            String userAgent) {
         Trip trip = tripRepository.findByShareCode(shareCode)
                 .orElseThrow(() -> new NotFoundException("Proposal not found"));
+
+        assertProposalActionable(trip);
+
+        if (request == null
+                || request.getName() == null || request.getName().isBlank()
+                || request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new BadRequestException("name and email are required to accept the proposal");
+        }
+        String name = request.getName().trim();
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            throw new BadRequestException("email is invalid");
+        }
+
+        List<String> tierCodes = normalizeTierCodes(request.getTierCodes(), trip);
+        String tierCodesJoined = tierCodes.isEmpty() ? null : String.join(",", tierCodes);
+
+        ProposalAcceptance acceptance = ProposalAcceptance.builder()
+                .trip(trip)
+                .name(name)
+                .email(email)
+                .ip(truncate(clientIp, 64))
+                .userAgent(truncate(userAgent, 512))
+                .acceptedAt(Instant.now())
+                .tierCodes(tierCodesJoined)
+                .build();
+        acceptanceRepository.persist(acceptance);
+
+        trip.setProposalClientName(name);
+        trip.setProposalClientEmail(email);
+
+        // Recalcula finalPrice se tiers foram escolhidos (base + deltas).
+        if (!tierCodes.isEmpty() && trip.getFinalPrice() != null) {
+            BigDecimal delta = tierRepository.findByTripId(trip.id).stream()
+                    .filter(t -> tierCodes.contains(t.getCode()))
+                    .map(t -> t.getPriceDelta() != null ? t.getPriceDelta() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            trip.setFinalPrice(trip.getFinalPrice().add(delta).setScale(2, RoundingMode.HALF_UP));
+        }
 
         ProposalStatus next = ProposalStatus.APPROVED;
         if (trip.getFinalPrice() != null && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0) {
@@ -90,22 +147,141 @@ public class ProposalService {
         trip.setProposalStatus(next);
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
+
+        String actorLabel = name + " <" + email + ">";
+        String meta = "{\"proposalStatus\":\"" + next + "\""
+                + ",\"acceptanceId\":\"" + acceptance.id + "\""
+                + (tierCodesJoined != null ? ",\"tierCodes\":\"" + tierCodesJoined + "\"" : "")
+                + "}";
         auditService.recordExternalActor(
                 trip,
-                PUBLIC_CLIENT_ACTOR_LABEL,
+                actorLabel,
                 next == ProposalStatus.PENDING_PAYMENT
                         ? B2bTripLogAction.PROPOSAL_PAYMENT_PENDING
                         : B2bTripLogAction.PROPOSAL_APPROVED,
                 "TRIP",
                 trip.id,
                 null,
-                "{\"proposalStatus\":\"" + next + "\"}",
+                meta,
                 next == ProposalStatus.PENDING_PAYMENT
-                        ? "Proposta aprovada — aguardando pagamento"
-                        : "Proposta aprovada pelo cliente na página pública",
+                        ? "Proposta aprovada por " + actorLabel + " — aguardando pagamento"
+                        : "Proposta aprovada por " + actorLabel
+                        + (tierCodesJoined != null ? " (tiers: " + tierCodesJoined + ")" : ""),
                 null);
         notifyAgencyOfProposalApproved(trip);
         return toPublicDto(trip);
+    }
+
+    @Transactional
+    public PublicProposalDTO rejectPublicProposal(
+            String shareCode,
+            RejectPublicProposalRequest request,
+            String clientIp,
+            String userAgent) {
+        Trip trip = tripRepository.findByShareCode(shareCode)
+                .orElseThrow(() -> new NotFoundException("Proposal not found"));
+
+        assertProposalActionable(trip);
+
+        String reason = request != null && request.getReason() != null
+                ? request.getReason().trim()
+                : "";
+        if (reason.isBlank()) {
+            throw new BadRequestException("reason is required to reject the proposal");
+        }
+        if (reason.length() > 2000) {
+            reason = reason.substring(0, 2000);
+        }
+
+        String name = request.getName() != null && !request.getName().isBlank()
+                ? request.getName().trim()
+                : null;
+        String email = request.getEmail() != null && !request.getEmail().isBlank()
+                ? request.getEmail().trim().toLowerCase(Locale.ROOT)
+                : null;
+        if (email != null && !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new BadRequestException("email is invalid");
+        }
+
+        trip.setProposalStatus(ProposalStatus.REJECTED);
+        trip.setProposalRejectReason(reason);
+        trip.setLastContactAt(Instant.now());
+        if (name != null) {
+            trip.setProposalClientName(name);
+        }
+        if (email != null) {
+            trip.setProposalClientEmail(email);
+        }
+        tripRepository.persist(trip);
+
+        String actorLabel = name != null && email != null
+                ? name + " <" + email + ">"
+                : PUBLIC_CLIENT_ACTOR_LABEL;
+        auditService.recordExternalActor(
+                trip,
+                actorLabel,
+                B2bTripLogAction.PROPOSAL_REJECTED,
+                "TRIP",
+                trip.id,
+                null,
+                "{\"proposalStatus\":\"REJECTED\",\"ip\":\"" + truncate(clientIp, 64) + "\"}",
+                "Proposta recusada: " + reason,
+                null);
+        return toPublicDto(trip);
+    }
+
+    private void assertProposalActionable(Trip trip) {
+        if (isExpired(trip)) {
+            throw new BadRequestException("Esta proposta expirou e não pode mais ser aceita ou recusada");
+        }
+        ProposalStatus status = trip.getProposalStatus() != null ? trip.getProposalStatus() : ProposalStatus.DRAFT;
+        if (status == ProposalStatus.REJECTED
+                || status == ProposalStatus.LOST
+                || status == ProposalStatus.CONFIRMED) {
+            throw new BadRequestException("Proposta já está em status final: " + status);
+        }
+        if (status == ProposalStatus.APPROVED || status == ProposalStatus.PENDING_PAYMENT) {
+            throw new BadRequestException("Proposta já foi aprovada");
+        }
+        if (status != ProposalStatus.SENT && status != ProposalStatus.DRAFT) {
+            throw new BadRequestException("Proposta não está disponível para esta ação (status: " + status + ")");
+        }
+    }
+
+    static boolean isExpired(Trip trip) {
+        return trip.getProposalExpiresAt() != null
+                && trip.getProposalExpiresAt().isBefore(Instant.now());
+    }
+
+    private List<String> normalizeTierCodes(List<String> requested, Trip trip) {
+        if (requested == null || requested.isEmpty()) {
+            return List.of();
+        }
+        var valid = tierRepository.findByTripId(trip.id).stream()
+                .map(TripProposalTier::getCode)
+                .collect(Collectors.toSet());
+        List<String> out = new ArrayList<>();
+        for (String code : requested) {
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            String c = code.trim();
+            if (!valid.contains(c)) {
+                throw new BadRequestException("Unknown tier code: " + c);
+            }
+            if (!out.contains(c)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    private static String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
     }
 
     private void notifyAgencyOfProposalApproved(Trip trip) {
@@ -205,7 +381,12 @@ public class ProposalService {
         trip.setProposalStatus(ProposalStatus.SENT);
         trip.setLastContactAt(now);
         trip.setProposalSentAt(now);
+        trip.setProposalExpiresAt(resolveExpiry(request, now));
+        trip.setProposalRejectReason(null);
         tripRepository.persist(trip);
+
+        // Upsert CRM leve a partir do contato da proposta.
+        ensureClientLinked(trip, clientEmail, trip.getProposalClientName());
 
         boolean queued = emailWorkerInvoker.enqueueWhiteLabelEmail(
                 clientEmail,
@@ -257,6 +438,42 @@ public class ProposalService {
         return new ArrayList<>(ids);
     }
 
+    private Instant resolveExpiry(SendProposalRequest request, Instant now) {
+        if (request != null && request.getProposalExpiresAt() != null) {
+            if (!request.getProposalExpiresAt().isAfter(now)) {
+                throw new BadRequestException("proposalExpiresAt must be in the future");
+            }
+            return request.getProposalExpiresAt();
+        }
+        int days = DEFAULT_PROPOSAL_TTL_DAYS;
+        if (request != null && request.getExpiresInDays() != null) {
+            days = Math.min(Math.max(request.getExpiresInDays(), 1), 90);
+        }
+        return now.plus(Duration.ofDays(days));
+    }
+
+    private void ensureClientLinked(Trip trip, String email, String name) {
+        if (trip.getAgency() == null || email == null || email.isBlank()) {
+            return;
+        }
+        if (trip.getClient() != null) {
+            return;
+        }
+        AgencyClient existing = agencyClientRepository
+                .findByAgencyAndEmail(trip.getAgency().id, email)
+                .orElse(null);
+        if (existing == null) {
+            existing = AgencyClient.builder()
+                    .agency(trip.getAgency())
+                    .name(name != null && !name.isBlank() ? name.trim() : email)
+                    .email(email.trim().toLowerCase(Locale.ROOT))
+                    .build();
+            agencyClientRepository.persist(existing);
+        }
+        trip.setClient(existing);
+        tripRepository.persist(trip);
+    }
+
     private String resolveClientEmail(Trip trip, SendProposalRequest request) {
         String requested = request != null && request.getClientEmail() != null
                 ? request.getClientEmail().trim()
@@ -302,16 +519,99 @@ public class ProposalService {
         return trip;
     }
 
-    public List<PipelineTripCardDTO> listPipeline(UUID userId) {
+    @Transactional
+    public Trip assignConsultant(UUID tripId, UUID actorUserId, AssignTripConsultantRequest request) {
+        Trip trip = requireAgencyTripAccess(tripId, actorUserId);
+        AgencyMember actor = agencyMemberRepository
+                .findByAgencyAndUser(trip.getAgency().id, actorUserId)
+                .orElseThrow(() -> new ForbiddenException("Not a member of this agency"));
+        if (actor.getAgencyRole() != AgencyRole.AGENCY_OWNER) {
+            throw new ForbiddenException("Only agency owners can reassign trips");
+        }
+
+        User consultant = null;
+        if (request != null && request.getConsultantId() != null) {
+            consultant = userRepository.findById(request.getConsultantId());
+            if (consultant == null) {
+                throw new NotFoundException("Consultant not found");
+            }
+            agencyMemberRepository
+                    .findByAgencyAndUser(trip.getAgency().id, consultant.id)
+                    .orElseThrow(() -> new BadRequestException("User is not a member of this agency"));
+        }
+        trip.setAssignedConsultant(consultant);
+        trip.setLastContactAt(Instant.now());
+        tripRepository.persist(trip);
+        auditService.record(
+                trip, actorUserId, B2bTripLogAction.TRIP_ASSIGNED,
+                "TRIP", trip.id, null,
+                consultant != null
+                        ? "{\"consultantId\":\"" + consultant.id + "\"}"
+                        : "{\"consultantId\":null}",
+                consultant != null
+                        ? "Viagem atribuída a " + consultant.getFullName()
+                        : "Atribuição de consultor removida",
+                null);
+        return trip;
+    }
+
+    @Transactional
+    public Trip linkClient(UUID tripId, UUID userId, UUID clientId) {
+        Trip trip = requireAgencyTripAccess(tripId, userId);
+        if (clientId == null) {
+            trip.setClient(null);
+            tripRepository.persist(trip);
+            return trip;
+        }
+        AgencyClient client = agencyClientRepository.findById(clientId);
+        if (client == null || client.getAgency() == null
+                || !client.getAgency().id.equals(trip.getAgency().id)) {
+            throw new NotFoundException("Client not found in this agency");
+        }
+        trip.setClient(client);
+        if (trip.getProposalClientEmail() == null || trip.getProposalClientEmail().isBlank()) {
+            trip.setProposalClientEmail(client.getEmail());
+        }
+        if (trip.getProposalClientName() == null || trip.getProposalClientName().isBlank()) {
+            trip.setProposalClientName(client.getName());
+        }
+        tripRepository.persist(trip);
+        auditService.record(
+                trip, userId, B2bTripLogAction.CLIENT_LINKED,
+                "TRIP", trip.id, null,
+                "{\"clientId\":\"" + client.id + "\"}",
+                "Cliente vinculado: " + client.getName(), null);
+        return trip;
+    }
+
+    public PipelinePageDTO listPipeline(
+            UUID userId,
+            ProposalStatus status,
+            UUID consultantId,
+            String q,
+            int page,
+            int size) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         Agency agency = member.getAgency();
-        List<Trip> trips = tripRepository.findByAgencyId(agency.id);
-        if (member.getAgencyRole() != AgencyRole.AGENCY_OWNER) {
-            trips = trips.stream()
-                    .filter(t -> t.getCreatedBy() != null && t.getCreatedBy().id.equals(userId))
-                    .toList();
-        }
-        return trips.stream().map(this::toPipelineCard).toList();
+        UUID scopeUserId = member.getAgencyRole() == AgencyRole.AGENCY_OWNER ? null : userId;
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+
+        List<Trip> trips = tripRepository.findPipeline(
+                agency.id, status, consultantId, q, scopeUserId, safePage, safeSize);
+        long total = tripRepository.countPipeline(agency.id, status, consultantId, q, scopeUserId);
+
+        return PipelinePageDTO.builder()
+                .items(trips.stream().map(this::toPipelineCard).toList())
+                .total(total)
+                .page(safePage)
+                .size(safeSize)
+                .build();
+    }
+
+    /** Compat: lista plana sem filtros (analytics e callers legados). */
+    public List<PipelineTripCardDTO> listPipeline(UUID userId) {
+        return listPipeline(userId, null, null, null, 0, 100).getItems();
     }
 
     public AgencyAnalyticsDTO analytics(UUID userId) {
@@ -421,6 +721,8 @@ public class ProposalService {
                             .multiply(org.example.application.services.proposal.ProposalPaymentService.DEFAULT_DEPOSIT_RATIO)
                             .setScale(2, RoundingMode.HALF_UP)
                         : null)
+                .proposalExpiresAt(trip.getProposalExpiresAt())
+                .expired(isExpired(trip))
                 .agency(agency != null ? agencyService.toPublicBrandingDto(agency) : null)
                 .segments(response.getSegments())
                 .tiers(tiers)
@@ -466,6 +768,12 @@ public class ProposalService {
                 .updatedAt(t.getUpdatedAt())
                 .createdBy(t.getCreatedBy() != null ? t.getCreatedBy().id : null)
                 .createdByName(t.getCreatedBy() != null ? t.getCreatedBy().getFullName() : null)
+                .assignedConsultantId(t.getAssignedConsultant() != null ? t.getAssignedConsultant().id : null)
+                .assignedConsultantName(t.getAssignedConsultant() != null
+                        ? t.getAssignedConsultant().getFullName() : null)
+                .clientId(t.getClient() != null ? t.getClient().id : null)
+                .clientName(t.getClient() != null ? t.getClient().getName()
+                        : t.getProposalClientName())
                 .build();
     }
 
@@ -484,6 +792,9 @@ public class ProposalService {
             return trip;
         }
         if (trip.getCreatedBy() != null && trip.getCreatedBy().id.equals(userId)) {
+            return trip;
+        }
+        if (trip.getAssignedConsultant() != null && trip.getAssignedConsultant().id.equals(userId)) {
             return trip;
         }
         if (tripRepository.isUserLinkedToTrip(tripId, userId)) {
