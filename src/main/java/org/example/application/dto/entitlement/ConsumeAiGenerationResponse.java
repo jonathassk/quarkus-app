@@ -13,4 +13,6 @@ public class ConsumeAiGenerationResponse {
     private long used;
     private long limit;
     private boolean unlimited;
+    /** FLASH | PRO — roteamento validado no servidor. */
+    private String aiModelTier;
 }

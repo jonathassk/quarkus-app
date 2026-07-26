@@ -30,6 +30,11 @@ public class EntitlementsDTO {
     /** Features desbloqueadas por compra UNITARIO em alguma viagem (resumo). */
     private List<String> tripUnlockKinds;
     private List<SuggestedUpgrade> upgrades;
+    /**
+     * Modelo de IA autorizado pelo servidor: {@code FLASH} (FREE) ou {@code PRO} (PREMIUM/B2B).
+     * O front deve enviar este valor à Lambda — não escolher o modelo no cliente.
+     */
+    private String aiModelTier;
 
     @Data
     @Builder

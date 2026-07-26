@@ -216,7 +216,7 @@ A API de pipeline e analytics existe; a `/business` no front ainda é protótipo
 
 ## Épico 6 — Refino da IA pós-geração
 
-**Ambos · Esforço M · Depende de 2.1 para contagem de créditos**
+**Ambos · Esforço M · Depende de 2.1 para contagem de créditos · Status: implementado (2026-07-26)**
 
 A geração vive numa Lambda externa ([docs/AI_LAMBDA_GEMINI.md](AI_LAMBDA_GEMINI.md)). O ganho agora é **refinar** o plano existente.
 
@@ -229,7 +229,7 @@ A geração vive numa Lambda externa ([docs/AI_LAMBDA_GEMINI.md](AI_LAMBDA_GEMIN
 
 ## Épico 7 — Templates e reuso de roteiro
 
-**Ambos · Esforço M · Depende de 6**
+**Ambos · Esforço M · Depende de 6 · Status: implementado (2026-07-26)**
 
 Mesma mecânica serve ao "viajar de novo" (B2C) e à biblioteca da agência (B2B).
 

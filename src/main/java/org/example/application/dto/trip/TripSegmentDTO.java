@@ -14,6 +14,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TripSegmentDTO {
+    private java.util.UUID id;
     private String cityId;
     @JsonbProperty(nillable = true)
     @JsonbDateFormat("yyyy-MM-dd")

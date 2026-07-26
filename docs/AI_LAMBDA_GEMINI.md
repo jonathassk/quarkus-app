@@ -16,6 +16,29 @@
 
 1. `generatePlan` / `generateAnonymousPlan` — stream HTTP (SSE/NDJSON/JSON chunks)
 2. `collectLocationInfo` — enriquecimento do destino para a espera útil
+3. `collectTravelDocs` — documentos/visto por nacionalidade → destinos
+4. `regenerateDay` / `refineSegment` — refino pós-geração (épico 6)
+
+### Refino (`regenerateDay` / `refineSegment`)
+
+```json
+{
+  "action": "regenerateDay",
+  "modelTier": "FLASH",
+  "refineInput": {
+    "intent": "CHEAPER | MORE_LOCAL | LESS_PACKED | SWAP_ACTIVITY",
+    "dayNumber": 2,
+    "instruction": "opcional",
+    "activityName": "opcional para SWAP_ACTIVITY",
+    "segment": { "...TravelSegment..." },
+    "context": { "currency": "BRL", "mealsPerDay": 2 }
+  }
+}
+```
+
+Resposta: `{ "segment": TravelSegment, "intent": "...", "action": "..." }`.
+
+`modelTier` vem do Quarkus (`EntitlementsDTO.aiModelTier` / consume AI) — Flash para FREE, Pro para Premium/B2B.
 
 ## Prompt de geração (obrigatório)
 

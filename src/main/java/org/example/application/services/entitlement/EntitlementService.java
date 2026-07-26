@@ -98,7 +98,23 @@ public class EntitlementService {
                 .maxCitiesPerPlan(limits.maxCitiesPerPlan)
                 .tripUnlockKinds(unlockKinds)
                 .upgrades(suggestedUpgrades(limits.planType))
+                .aiModelTier(resolveAiModelTier(limits.planType))
                 .build();
+    }
+
+    /** Flash para FREE; Pro para Premium e B2B pago. */
+    public static String resolveAiModelTier(String planType) {
+        if (planType == null || planType.isBlank()) {
+            return "FLASH";
+        }
+        String p = planType.trim().toUpperCase();
+        if ("FREE".equals(p) || "B2B_FREE".equals(p) || "B2B_INACTIVE".equals(p)) {
+            return "FLASH";
+        }
+        if (p.startsWith("B2B_") || "B2C_PREMIUM".equals(p) || "PREMIUM".equals(p)) {
+            return "PRO";
+        }
+        return "FLASH";
     }
 
     public void requireCanCreateTrip(UUID userId) {
@@ -189,6 +205,7 @@ public class EntitlementService {
                 .used(after)
                 .limit(limits.maxAiGenerationsPerMonth)
                 .unlimited(limits.maxAiGenerationsPerMonth < 0 || tripUnlocked)
+                .aiModelTier(resolveAiModelTier(limits.planType))
                 .build();
     }
 
