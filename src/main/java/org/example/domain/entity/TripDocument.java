@@ -37,6 +37,10 @@ public class TripDocument extends PanacheEntityBase {
     @Column(name = "content_type", nullable = false, length = 128)
     private String contentType;
 
+    /** Tamanho do arquivo em bytes (para quota de storage do plano). */
+    @Column(name = "size_bytes")
+    private Long sizeBytes;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     @Builder.Default

@@ -7,12 +7,14 @@ import org.example.application.dto.event.InviteParticipantsRequestDTO;
 import org.example.application.dto.event.InviteParticipantsResponseDTO;
 import org.example.application.dto.event.RsvpRequestDTO;
 import org.example.application.exception.event.EventException;
+import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.User;
 import org.example.domain.entity.event.Event;
 import org.example.domain.entity.event.EventParticipant;
 import org.example.domain.enums.EventParticipantRole;
 import org.example.domain.enums.EventParticipantStatus;
 import org.example.domain.enums.EventVisibility;
+import org.example.domain.enums.NotificationKind;
 import org.example.domain.repository.UserRepository;
 import org.example.domain.repository.event.EventParticipantRepository;
 import org.example.domain.repository.event.EventRepository;
@@ -31,6 +33,7 @@ public class EventParticipantService {
     private final UserRepository userRepository;
     private final EventAuthorizationService authorizationService;
     private final EventChatService eventChatService;
+    private final NotificationService notificationService;
 
     @Transactional
     public List<org.example.application.dto.event.EventParticipantResponseDTO> listParticipants(
@@ -137,7 +140,39 @@ public class EventParticipantService {
             eventChatService.onParticipantLeft(eventId, userId);
         }
 
+        notifyOrganizersOfRsvp(event, userId, request.getStatus());
         return new EventParticipantResponse(participant);
+    }
+
+    private void notifyOrganizersOfRsvp(Event event, UUID responderId, EventParticipantStatus status) {
+        List<UUID> organizers =
+                participantRepository.findByEventId(event.getId()).stream()
+                        .filter(p -> p.getRole() == EventParticipantRole.ORGANIZER)
+                        .map(p -> p.getUser() != null ? p.getUser().id : null)
+                        .filter(id -> id != null && !id.equals(responderId))
+                        .toList();
+        if (organizers.isEmpty()
+                && event.getCreatedBy() != null
+                && !event.getCreatedBy().id.equals(responderId)) {
+            organizers = List.of(event.getCreatedBy().id);
+        }
+        if (organizers.isEmpty()) {
+            return;
+        }
+        User responder = userRepository.findById(responderId);
+        String name =
+                responder != null && responder.getFullName() != null
+                        ? responder.getFullName()
+                        : "Alguém";
+        String eventTitle = event.getTitle() != null ? event.getTitle() : "evento";
+        notificationService.createForUsers(
+                organizers,
+                NotificationKind.EVENT_RSVP,
+                name + " respondeu ao convite",
+                name + " marcou " + status.name() + " em \"" + eventTitle + "\".",
+                "EVENT",
+                event.getId(),
+                true);
     }
 
     @Transactional

@@ -28,4 +28,12 @@ public class TripShareLinkRepository implements PanacheRepositoryBase<TripShareL
                 tripId,
                 java.time.Instant.now());
     }
+
+    /** Links ativos em viagens do workspace (não revogados e não expirados). */
+    public long countActiveByWorkspace(UUID workspaceId) {
+        return count(
+                "trip.workspace.id = ?1 and revokedAt is null and (expiresAt is null or expiresAt > ?2)",
+                workspaceId,
+                java.time.Instant.now());
+    }
 }

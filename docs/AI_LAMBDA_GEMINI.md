@@ -28,6 +28,19 @@ O JSON estruturado de cada atividade/refeição **deve** preencher:
 
 Rejeitar ou re-promptar se horários/endereço vierem vazios em POIs principais.
 
+### Refeições opcionais (`mealsPerDay`)
+
+Alinhado ao front (`includeMeals: false` → `mealsPerDay: 0`, `budgetPerDayMeals: 0`, `includeBreakfast: false`):
+
+| Campo | Com refeições | Sem refeições |
+|-------|---------------|---------------|
+| `mealsPerDay` | 1–4 | **0** |
+| `budgetPerDayMeals` | > 0 | **0** |
+| `includeBreakfast` | true/false | false |
+| `segments[].meals` no output | lista preenchida | **`[]`** |
+
+Persistência Quarkus: `TripSegment.meals` pode ser null ou lista vazia; create/update de trip não exige refeições.
+
 ## `collectLocationInfo` — schema enriquecido (espera útil)
 
 Payload de resposta por cidade/país deve incluir abas do workspace `/create`:

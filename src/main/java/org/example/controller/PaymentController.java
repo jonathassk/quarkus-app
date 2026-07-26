@@ -33,6 +33,7 @@ import org.example.domain.repository.UserRepository;
 import org.example.application.services.agency.AgencyService;
 import org.example.application.services.payment.StripeEventService;
 import org.example.application.services.payment.TripUnlockService;
+import org.example.application.services.proposal.ProposalPaymentService;
 import org.example.utils.RequestAuthHeaders;
 
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -64,6 +65,7 @@ public class PaymentController {
     private final AgencyService agencyService;
     private final StripeEventService stripeEventService;
     private final TripUnlockService tripUnlockService;
+    private final ProposalPaymentService proposalPaymentService;
 
     @ConfigProperty(name = "stripe.api.key")
     Optional<String> apiKey;
@@ -347,9 +349,10 @@ public class PaymentController {
                         String targetIdStr = session.getMetadata().get("targetId");
                         String paymentType = session.getMetadata().get("paymentType");
                         String subscriptionId = session.getSubscription();
+                        String tripPaymentIdStr = session.getMetadata().get("tripPaymentId");
                         if (targetIdStr != null && paymentType != null) {
                             processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId,
-                                    fulfillmentOf(session));
+                                    fulfillmentOf(session), tripPaymentIdStr);
                         }
                     }
                     break;
@@ -416,19 +419,37 @@ public class PaymentController {
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType) {
-        processSuccessfulPayment(targetId, paymentType, null, null);
+        processSuccessfulPayment(targetId, paymentType, null, null, null);
     }
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId) {
-        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, null);
+        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, null, null);
     }
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId,
                                          CheckoutFulfillment fulfillment) {
+        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, fulfillment, null);
+    }
+
+    @Transactional
+    public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId,
+                                         CheckoutFulfillment fulfillment, String tripPaymentIdStr) {
         log.info("Processing successful payment: targetId={}, paymentType={}, sub={}",
                 targetId, paymentType, stripeSubscriptionId);
+        if (ProposalPaymentService.PAYMENT_TYPE_PROPOSAL.equals(paymentType)) {
+            if (tripPaymentIdStr == null || tripPaymentIdStr.isBlank()) {
+                log.warn("PROPOSAL payment without tripPaymentId metadata targetId={}", targetId);
+                return;
+            }
+            proposalPaymentService.fulfillProposalPayment(
+                    UUID.fromString(tripPaymentIdStr.trim()),
+                    fulfillment != null ? fulfillment.sessionId() : null,
+                    fulfillment != null ? fulfillment.amount() : null,
+                    fulfillment != null ? fulfillment.currency() : null);
+            return;
+        }
         if ("MENSAL".equals(paymentType) || "ANUAL".equals(paymentType)) {
             Workspace workspace = Workspace.findById(targetId);
             if (workspace != null) {

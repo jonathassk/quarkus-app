@@ -171,4 +171,17 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
     public List<Trip> findByAgencyIdAndProposalStatus(UUID agencyId, org.example.domain.enums.ProposalStatus status) {
         return list("agency.id = ?1 AND proposalStatus = ?2 ORDER BY updatedAt DESC", agencyId, status);
     }
+
+    /** Viagens ativas do usuário (criador ou membro) vinculadas a um workspace. */
+    public long countActiveByUserAndWorkspace(UUID userId, UUID workspaceId) {
+        Long count = getEntityManager()
+                .createQuery(
+                        "SELECT COUNT(DISTINCT t) FROM Trip t LEFT JOIN t.users u "
+                                + "WHERE t.workspace.id = :wid AND (t.createdBy.id = :uid OR u.user.id = :uid)",
+                        Long.class)
+                .setParameter("wid", workspaceId)
+                .setParameter("uid", userId)
+                .getSingleResult();
+        return count != null ? count : 0L;
+    }
 }

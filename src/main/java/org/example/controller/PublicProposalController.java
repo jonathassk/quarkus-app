@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.dto.common.ApiErrorBody;
+import org.example.application.dto.proposal.ProposalCheckoutRequest;
+import org.example.application.services.proposal.ProposalPaymentService;
 import org.example.application.services.proposal.ProposalService;
 
 @Slf4j
@@ -20,6 +22,7 @@ import org.example.application.services.proposal.ProposalService;
 public class PublicProposalController {
 
     private final ProposalService proposalService;
+    private final ProposalPaymentService proposalPaymentService;
 
     @GET
     @Path("/{shareCode}")
@@ -44,6 +47,30 @@ public class PublicProposalController {
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(ApiErrorBody.builder().code("NOT_FOUND").message(e.getMessage()).build())
+                    .build();
+        }
+    }
+
+    @POST
+    @Path("/{shareCode}/checkout")
+    @Transactional
+    @Operation(summary = "Iniciar checkout Stripe (sinal ou valor cheio) após aprovação")
+    public Response checkout(
+            @PathParam("shareCode") String shareCode,
+            ProposalCheckoutRequest body) {
+        try {
+            return Response.ok(proposalPaymentService.startCheckout(shareCode, body)).build();
+        } catch (NotFoundException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(ApiErrorBody.builder().code("NOT_FOUND").message(e.getMessage()).build())
+                    .build();
+        } catch (BadRequestException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(ApiErrorBody.builder().code("BAD_REQUEST").message(e.getMessage()).build())
+                    .build();
+        } catch (ServiceUnavailableException e) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(ApiErrorBody.builder().code("PAYMENT_UNAVAILABLE").message(e.getMessage()).build())
                     .build();
         }
     }

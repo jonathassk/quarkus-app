@@ -17,7 +17,12 @@ public class PipelineTripCardDTO {
     private String name;
     private String shareCode;
     private ProposalStatus proposalStatus;
+    private BigDecimal baseCost;
     private BigDecimal finalPrice;
+    /** finalPrice − baseCost */
+    private BigDecimal margin;
+    /** Markup % efetivo: (margin / baseCost) × 100 */
+    private BigDecimal markupPercentage;
     private LocalDate startDate;
     private LocalDate endDate;
     private Instant lastContactAt;

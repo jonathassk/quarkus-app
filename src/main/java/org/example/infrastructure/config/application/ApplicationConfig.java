@@ -125,7 +125,8 @@ public class ApplicationConfig {
             ActivityRepository activityRepository,
             MealRepository mealRepository,
             org.example.application.services.chat.TripChatService tripChatService,
-            AgencyMemberRepository agencyMemberRepository) {
+            AgencyMemberRepository agencyMemberRepository,
+            org.example.application.services.entitlement.EntitlementService entitlementService) {
         return new CreateTripUseCaseimpl(
                 tripRepository,
                 userRepository,
@@ -133,7 +134,8 @@ public class ApplicationConfig {
                 activityRepository,
                 mealRepository,
                 tripChatService,
-                agencyMemberRepository);
+                agencyMemberRepository,
+                entitlementService);
     }
 
     @Produces
@@ -211,14 +213,16 @@ public class ApplicationConfig {
             UserRepository userRepository,
             TokenService tokenService,
             ObjectStorageService objectStorageService,
-            B2bAuditService auditService) {
+            B2bAuditService auditService,
+            org.example.application.services.entitlement.EntitlementService entitlementService) {
         return new TripDocumentController(
                 tripRepository,
                 tripDocumentRepository,
                 userRepository,
                 tokenService,
                 objectStorageService,
-                auditService);
+                auditService,
+                entitlementService);
     }
 
     @Produces

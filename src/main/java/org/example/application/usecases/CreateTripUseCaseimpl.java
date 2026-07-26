@@ -12,6 +12,7 @@ import org.example.application.dto.trip.MealDTO;
 import org.example.application.dto.trip.TripUserDTO;
 import org.example.application.services.TripService;
 import org.example.application.services.chat.TripChatService;
+import org.example.application.services.entitlement.EntitlementService;
 import org.example.application.usecases.interfaces.CreateTripUseCase;
 import org.example.domain.entity.*;
 import org.example.domain.repository.*;
@@ -33,9 +34,12 @@ public class CreateTripUseCaseimpl implements CreateTripUseCase {
     private final MealRepository mealRepository;
     private final TripChatService tripChatService;
     private final AgencyMemberRepository agencyMemberRepository;
+    private final EntitlementService entitlementService;
 
     @Override
     public Trip createTrip(TripRequestDTO tripRequest) {
+        entitlementService.requireCanCreateTrip(tripRequest.getCreatedBy());
+
         ModelMapper mapper = ModelMapperFactory.createModelMapper();
         Trip trip = mapper.map(tripRequest, Trip.class);
 

@@ -34,6 +34,7 @@ public class TripShareLinkService {
     private final TripShareLinkRepository shareLinkRepository;
     private final UserRepository userRepository;
     private final TripCollaborationService collaborationService;
+    private final org.example.application.services.entitlement.EntitlementService entitlementService;
 
     @ConfigProperty(name = "app.public-url")
     String appPublicUrl;
@@ -41,6 +42,7 @@ public class TripShareLinkService {
     @Transactional
     public TripShareLinkDTO createOrRotate(UUID tripId, UUID actorId, CreateTripShareLinkRequest request) {
         Trip trip = requireManageableTrip(tripId, actorId);
+        entitlementService.requireCanCreateShareLink(actorId, tripId);
         Instant expiresAt = request != null ? request.getExpiresAt() : null;
         if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new BadRequestException("expiresAt must be in the future");

@@ -7,6 +7,10 @@ public enum ProposalStatus {
     DRAFT,
     SENT,
     APPROVED,
+    /** Cliente aprovou; aguardando pagamento (sinal ou valor cheio). */
+    PENDING_PAYMENT,
+    /** Pagamento confirmado — venda fechada. */
+    CONFIRMED,
     REJECTED,
     LOST;
 

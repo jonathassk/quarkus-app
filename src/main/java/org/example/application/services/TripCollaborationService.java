@@ -13,13 +13,15 @@ import org.example.application.dto.trip.TripUserDTO;
 import org.example.application.dto.trip.request.ShareTripRequestDTO;
 import org.example.application.dto.trip.request.ShareTripUserItemDTO;
 import org.example.application.dto.trip.request.UpdateSharePermissionDTO;
+import org.example.application.services.chat.TripChatService;
+import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripUser;
 import org.example.domain.entity.User;
+import org.example.domain.enums.NotificationKind;
 import org.example.domain.enums.UserPermissionLevel;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
-import org.example.application.services.chat.TripChatService;
 import org.example.infrastructure.mapper.TripMapper;
 
 import java.time.Instant;
@@ -35,6 +37,7 @@ public class TripCollaborationService {
     private final TripRepository tripRepository;
     private final UserRepository userRepository;
     private final TripChatService tripChatService;
+    private final NotificationService notificationService;
 
     public UserPermissionLevel resolvePermission(Trip trip, UUID userId) {
         if (trip.getCreatedBy() != null && trip.getCreatedBy().id.equals(userId)) {
@@ -110,6 +113,15 @@ public class TripCollaborationService {
 
         tripRepository.addTripMember(trip, invitee, permission);
         log.info("Invited collaborator tripId={} userId={} permission={}", trip.id, invitee.id, permission);
+        String tripName = trip.getName() != null ? trip.getName() : "viagem";
+        notificationService.create(
+                invitee.id,
+                NotificationKind.TRIP_SHARED,
+                "Você foi adicionado a \"" + tripName + "\"",
+                "Agora você pode colaborar nesta viagem.",
+                "TRIP",
+                trip.id,
+                true);
     }
 
     private User resolveInvitee(ShareTripUserItemDTO item) {

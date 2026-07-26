@@ -132,7 +132,7 @@ Hoje só a **proposta** tem link público (`/p/{shareCode}`). A viagem em si exi
 
 ## Épico 2 — Monetização: entitlements, paywall e pagamento da proposta
 
-**Ambos · Esforço G · Depende de 0.1 e 0.6**
+**Ambos · Esforço G · Depende de 0.1 e 0.6 · Status: implementado (2026-07-26)**
 
 O Stripe existe, mas não há **limite** aplicado no B2C nem **cobrança** ligada à proposta aprovada no B2B.
 
@@ -158,7 +158,7 @@ O Stripe existe, mas não há **limite** aplicado no B2C nem **cobrança** ligad
 
 ## Épico 3 — Central de notificações
 
-**Ambos · Esforço M · Depende de 1.3 para os eventos de comentário**
+**Ambos · Esforço M · Depende de 1.3 para os eventos de comentário · Status: implementado (2026-07-26)**
 
 Hoje não existe nenhuma notificação in-app — apenas e-mail via worker. Uma única infra atende os dois públicos.
 

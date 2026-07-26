@@ -40,6 +40,16 @@ public class UserEmailPreferences extends PanacheEntityBase {
     @Builder.Default
     private boolean documentExpiryAlerts = true;
 
+    /** Persistência e entrega de notificações in-app. */
+    @Column(name = "in_app_notifications", nullable = false)
+    @Builder.Default
+    private boolean inAppNotifications = true;
+
+    /** E-mails de atividade (exceto document expiry, que usa document_expiry_alerts). */
+    @Column(name = "activity_emails", nullable = false)
+    @Builder.Default
+    private boolean activityEmails = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

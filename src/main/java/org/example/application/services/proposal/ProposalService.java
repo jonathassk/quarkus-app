@@ -11,10 +11,12 @@ import org.example.application.dto.agency.AgencyAnalyticsDTO;
 import org.example.application.dto.proposal.*;
 import org.example.application.services.B2bAuditService;
 import org.example.application.services.agency.AgencyService;
+import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.*;
 import org.example.domain.enums.AgencyRole;
 import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentVisibility;
+import org.example.domain.enums.NotificationKind;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.repository.AgencyMemberRepository;
 import org.example.domain.repository.TripProposalTierRepository;
@@ -55,6 +57,8 @@ public class ProposalService {
     B2bAuditService auditService;
     @Inject
     org.example.infrastructure.email.EmailWorkerInvoker emailWorkerInvoker;
+    @Inject
+    NotificationService notificationService;
 
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "app.public-url")
     String appPublicUrl;
@@ -77,20 +81,47 @@ public class ProposalService {
     public PublicProposalDTO approvePublicProposal(String shareCode) {
         Trip trip = tripRepository.findByShareCode(shareCode)
                 .orElseThrow(() -> new NotFoundException("Proposal not found"));
-        trip.setProposalStatus(ProposalStatus.APPROVED);
+
+        ProposalStatus next = ProposalStatus.APPROVED;
+        if (trip.getFinalPrice() != null && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0) {
+            next = ProposalStatus.PENDING_PAYMENT;
+        }
+
+        trip.setProposalStatus(next);
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
         auditService.recordExternalActor(
                 trip,
                 PUBLIC_CLIENT_ACTOR_LABEL,
-                B2bTripLogAction.PROPOSAL_APPROVED,
+                next == ProposalStatus.PENDING_PAYMENT
+                        ? B2bTripLogAction.PROPOSAL_PAYMENT_PENDING
+                        : B2bTripLogAction.PROPOSAL_APPROVED,
                 "TRIP",
                 trip.id,
                 null,
-                "{\"proposalStatus\":\"APPROVED\"}",
-                "Proposta aprovada pelo cliente na página pública",
+                "{\"proposalStatus\":\"" + next + "\"}",
+                next == ProposalStatus.PENDING_PAYMENT
+                        ? "Proposta aprovada — aguardando pagamento"
+                        : "Proposta aprovada pelo cliente na página pública",
                 null);
+        notifyAgencyOfProposalApproved(trip);
         return toPublicDto(trip);
+    }
+
+    private void notifyAgencyOfProposalApproved(Trip trip) {
+        List<UUID> recipients = resolveAgencyRecipients(trip, null);
+        if (recipients.isEmpty()) {
+            return;
+        }
+        String tripName = trip.getName() != null ? trip.getName() : "proposta";
+        notificationService.createForUsers(
+                recipients,
+                NotificationKind.PROPOSAL_APPROVED,
+                "Proposta aprovada: " + tripName,
+                "O cliente aprovou a proposta \"" + tripName + "\".",
+                "TRIP",
+                trip.id,
+                true);
     }
 
     @Transactional
@@ -191,7 +222,39 @@ public class ProposalService {
                 "TRIP", trip.id, null,
                 "{\"proposalStatus\":\"SENT\",\"emailQueued\":" + queued + "}",
                 "Proposta enviada para " + clientEmail, null);
+
+        // In-app para membros internos; e-mail do cliente já foi via white-label.
+        List<UUID> internalRecipients = resolveAgencyRecipients(trip, userId);
+        if (!internalRecipients.isEmpty()) {
+            String tripName = trip.getName() != null ? trip.getName() : "proposta";
+            notificationService.createForUsers(
+                    internalRecipients,
+                    NotificationKind.PROPOSAL_SENT,
+                    "Proposta enviada: " + tripName,
+                    "Proposta enviada para " + clientEmail,
+                    "TRIP",
+                    trip.id,
+                    false);
+        }
         return trip;
+    }
+
+    private List<UUID> resolveAgencyRecipients(Trip trip, UUID excludeUserId) {
+        java.util.LinkedHashSet<UUID> ids = new java.util.LinkedHashSet<>();
+        if (trip.getCreatedBy() != null) {
+            ids.add(trip.getCreatedBy().id);
+        }
+        if (trip.getAgency() != null) {
+            for (AgencyMember member : agencyMemberRepository.findAllByAgency(trip.getAgency().id)) {
+                if (member.getUser() != null) {
+                    ids.add(member.getUser().id);
+                }
+            }
+        }
+        if (excludeUserId != null) {
+            ids.remove(excludeUserId);
+        }
+        return new ArrayList<>(ids);
     }
 
     private String resolveClientEmail(Trip trip, SendProposalRequest request) {
@@ -227,7 +290,8 @@ public class ProposalService {
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
         B2bTripLogAction action = switch (status) {
-            case APPROVED -> B2bTripLogAction.PROPOSAL_APPROVED;
+            case APPROVED, PENDING_PAYMENT -> B2bTripLogAction.PROPOSAL_APPROVED;
+            case CONFIRMED -> B2bTripLogAction.PROPOSAL_CONFIRMED;
             case REJECTED, LOST -> B2bTripLogAction.PROPOSAL_REJECTED;
             case SENT -> B2bTripLogAction.PROPOSAL_SENT;
             default -> B2bTripLogAction.TRIP_STATUS_CHANGED;
@@ -254,7 +318,7 @@ public class ProposalService {
         AgencyMember member = agencyService.requireOwner(userId);
         List<Trip> trips = tripRepository.findByAgencyId(member.getAgency().id);
 
-        long draft = 0, sent = 0, approved = 0, rejected = 0, lost = 0;
+        long draft = 0, sent = 0, approved = 0, rejected = 0, lost = 0, pendingPayment = 0, confirmed = 0;
         BigDecimal forecast = BigDecimal.ZERO;
         Map<String, Long> destinations = new LinkedHashMap<>();
 
@@ -265,6 +329,18 @@ public class ProposalService {
                 case SENT -> sent++;
                 case APPROVED -> {
                     approved++;
+                    if (t.getFinalPrice() != null) {
+                        forecast = forecast.add(t.getFinalPrice());
+                    }
+                }
+                case PENDING_PAYMENT -> {
+                    pendingPayment++;
+                    if (t.getFinalPrice() != null) {
+                        forecast = forecast.add(t.getFinalPrice());
+                    }
+                }
+                case CONFIRMED -> {
+                    confirmed++;
                     if (t.getFinalPrice() != null) {
                         forecast = forecast.add(t.getFinalPrice());
                     }
@@ -280,8 +356,9 @@ public class ProposalService {
             destinations.merge(dest, 1L, Long::sum);
         }
 
-        long conversionDenom = sent + approved + rejected + lost;
-        double conversion = conversionDenom == 0 ? 0.0 : (approved * 100.0) / conversionDenom;
+        long conversionDenom = sent + approved + pendingPayment + confirmed + rejected + lost;
+        double conversion = conversionDenom == 0 ? 0.0
+                : ((approved + pendingPayment + confirmed) * 100.0) / conversionDenom;
 
         List<AgencyAnalyticsDTO.DestinationStat> top = destinations.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
@@ -293,7 +370,7 @@ public class ProposalService {
         return AgencyAnalyticsDTO.builder()
                 .proposalsDraft(draft)
                 .proposalsSent(sent)
-                .proposalsApproved(approved)
+                .proposalsApproved(approved + pendingPayment + confirmed)
                 .proposalsRejected(rejected)
                 .proposalsLost(lost)
                 .conversionRate(Math.round(conversion * 100.0) / 100.0)
@@ -336,6 +413,14 @@ public class ProposalService {
                 .currency(trip.getCurrency())
                 .finalPrice(trip.getFinalPrice())
                 .proposalStatus(trip.getProposalStatus())
+                .paymentRequired(trip.getFinalPrice() != null
+                        && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0
+                        && trip.getProposalStatus() != ProposalStatus.CONFIRMED)
+                .depositAmount(trip.getFinalPrice() != null && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0
+                        ? trip.getFinalPrice()
+                            .multiply(org.example.application.services.proposal.ProposalPaymentService.DEFAULT_DEPOSIT_RATIO)
+                            .setScale(2, RoundingMode.HALF_UP)
+                        : null)
                 .agency(agency != null ? agencyService.toPublicBrandingDto(agency) : null)
                 .segments(response.getSegments())
                 .tiers(tiers)
@@ -354,12 +439,27 @@ public class ProposalService {
     }
 
     private PipelineTripCardDTO toPipelineCard(Trip t) {
+        BigDecimal base = t.getBaseCost();
+        BigDecimal finalPrice = t.getFinalPrice();
+        BigDecimal margin = null;
+        BigDecimal markupPct = null;
+        if (base != null && finalPrice != null) {
+            margin = finalPrice.subtract(base);
+            if (base.compareTo(BigDecimal.ZERO) > 0) {
+                markupPct = margin
+                        .multiply(new BigDecimal("100"))
+                        .divide(base, 2, RoundingMode.HALF_UP);
+            }
+        }
         return PipelineTripCardDTO.builder()
                 .tripId(t.id)
                 .name(t.getName())
                 .shareCode(t.getShareCode())
                 .proposalStatus(t.getProposalStatus())
-                .finalPrice(t.getFinalPrice())
+                .baseCost(base)
+                .finalPrice(finalPrice)
+                .margin(margin)
+                .markupPercentage(markupPct)
                 .startDate(t.getStartDate())
                 .endDate(t.getEndDate())
                 .lastContactAt(t.getLastContactAt())

@@ -11,10 +11,12 @@ import org.example.application.dto.trip.request.CreateTripCommentRequest;
 import org.example.application.dto.trip.response.TripCommentDTO;
 import org.example.application.dto.trip.response.TripCommentsPageDTO;
 import org.example.application.services.TripCollaborationService;
+import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripComment;
 import org.example.domain.entity.TripCommentRead;
 import org.example.domain.entity.User;
+import org.example.domain.enums.NotificationKind;
 import org.example.domain.enums.TripCommentTargetType;
 import org.example.domain.enums.UserPermissionLevel;
 import org.example.domain.repository.TripCommentReadRepository;
@@ -41,6 +43,7 @@ public class TripCommentService {
     private final TripCommentReadRepository readRepository;
     private final UserRepository userRepository;
     private final TripCollaborationService collaborationService;
+    private final NotificationService notificationService;
 
     @Transactional
     public TripCommentsPageDTO list(
@@ -114,8 +117,31 @@ public class TripCommentService {
         commentRepository.persist(comment);
         // Autor já "leu" o próprio comentário
         markRead(tripId, userId);
+        notifyTripMembersOfComment(trip, userId, author, body);
         log.info("Created trip comment tripId={} commentId={} by={}", tripId, comment.id, userId);
         return toDto(comment);
+    }
+
+    private void notifyTripMembersOfComment(Trip trip, UUID authorId, User author, String body) {
+        List<UUID> recipients =
+                tripRepository.listTripMemberUserIds(trip.id).stream()
+                        .filter(id -> !id.equals(authorId))
+                        .toList();
+        if (recipients.isEmpty()) {
+            return;
+        }
+        String authorName =
+                author != null && author.getFullName() != null ? author.getFullName() : "Alguém";
+        String tripName = trip.getName() != null ? trip.getName() : "viagem";
+        String preview = body.length() > 120 ? body.substring(0, 117) + "..." : body;
+        notificationService.createForUsers(
+                recipients,
+                NotificationKind.TRIP_COMMENT,
+                authorName + " comentou em \"" + tripName + "\"",
+                preview,
+                "TRIP",
+                trip.id,
+                true);
     }
 
     @Transactional

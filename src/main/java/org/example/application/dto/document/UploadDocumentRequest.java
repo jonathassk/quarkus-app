@@ -14,4 +14,6 @@ public class UploadDocumentRequest {
     private String visibility;
     private java.util.UUID activityId;
     private java.util.UUID segmentId;
+    /** Tamanho esperado em bytes — usado para checar quota antes do PUT. */
+    private Long sizeBytes;
 }

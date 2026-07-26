@@ -11,10 +11,12 @@ import org.example.application.dto.trip.request.CreateTripInviteRequest;
 import org.example.application.dto.trip.response.TripInviteDTO;
 import org.example.application.services.TripCollaborationService;
 import org.example.application.services.chat.TripChatService;
+import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripInvite;
 import org.example.domain.entity.TripUser;
 import org.example.domain.entity.User;
+import org.example.domain.enums.NotificationKind;
 import org.example.domain.enums.TripInviteStatus;
 import org.example.domain.enums.UserPermissionLevel;
 import org.example.domain.repository.TripInviteRepository;
@@ -48,6 +50,7 @@ public class TripInviteService {
     private final TripCollaborationService collaborationService;
     private final TripChatService tripChatService;
     private final EmailWorkerInvoker emailWorkerInvoker;
+    private final NotificationService notificationService;
 
     @ConfigProperty(name = "app.public-url")
     String appPublicUrl;
@@ -103,6 +106,17 @@ public class TripInviteService {
         inviteRepository.persist(invite);
 
         sendInviteEmail(invite, trip);
+        // Se o convidado já tem conta, notifica in-app (e-mail já foi pelo convite).
+        existingUser.ifPresent(
+                invitee ->
+                        notificationService.create(
+                                invitee.id,
+                                NotificationKind.TRIP_SHARED,
+                                "Convite para \"" + (trip.getName() != null ? trip.getName() : "viagem") + "\"",
+                                "Você foi convidado a colaborar nesta viagem.",
+                                "TRIP",
+                                trip.id,
+                                false));
         log.info("Created trip invite tripId={} email={}", tripId, email);
         return toDto(invite);
     }
@@ -214,8 +228,33 @@ public class TripInviteService {
         invite.setAcceptedAt(Instant.now());
         invite.setAcceptedUser(user);
         inviteRepository.persist(invite);
+        notifyInviteAccepted(trip, invite, user);
         log.info("Accepted trip invite tripId={} userId={}", trip.id, userId);
         return toDto(invite);
+    }
+
+    private void notifyInviteAccepted(Trip trip, TripInvite invite, User acceptedUser) {
+        List<UUID> recipients =
+                tripRepository.listTripMemberUserIds(trip.id).stream()
+                        .filter(id -> !id.equals(acceptedUser.id))
+                        .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+        if (invite.getInvitedBy() != null && !invite.getInvitedBy().id.equals(acceptedUser.id)) {
+            recipients.add(invite.getInvitedBy().id);
+        }
+        if (recipients.isEmpty()) {
+            return;
+        }
+        String name =
+                acceptedUser.getFullName() != null ? acceptedUser.getFullName() : acceptedUser.getEmail();
+        String tripName = trip.getName() != null ? trip.getName() : "viagem";
+        notificationService.createForUsers(
+                recipients,
+                NotificationKind.TRIP_SHARED,
+                name + " entrou em \"" + tripName + "\"",
+                "Convite aceito — novo colaborador na viagem.",
+                "TRIP",
+                trip.id,
+                true);
     }
 
     private void sendInviteEmail(TripInvite invite, Trip trip) {

@@ -269,6 +269,8 @@ public class TripController {
             TripDataValidator.validateTripRequest(tripRequest);
             Trip result = createTripUseCase.createTrip(tripRequest);
             return Response.status(Response.Status.CREATED).entity(result.id).build();
+        } catch (org.example.application.exception.EntitlementExceededException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.warn("Create trip rejected: name={}, reason={}", tripRequest.getName(), e.getMessage());
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();

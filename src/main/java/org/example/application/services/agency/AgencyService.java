@@ -52,9 +52,29 @@ public class AgencyService {
         return Optional.of(memberships.get(0));
     }
 
+    /**
+     * Membership com agência em plano pago ativo ({@code B2B_PRO} e futuros {@code B2B_*}).
+     * Agências {@code B2B_INACTIVE}/{@code B2B_FREE} não liberam o portal.
+     */
+    public Optional<AgencyMember> requireActiveMembership(UUID userId) {
+        return requireMembership(userId).filter(m -> isActivePaidPlan(m.getAgency()));
+    }
+
     public AgencyMember requireMembershipOrThrow(UUID userId) {
-        return requireMembership(userId)
+        return requireActiveMembership(userId)
                 .orElseThrow(() -> new NotFoundException("User is not a member of any agency"));
+    }
+
+    /** {@code true} se a agência tem assinatura paga ativa (não há plano B2B gratuito). */
+    public static boolean isActivePaidPlan(Agency agency) {
+        if (agency == null || agency.getPlanType() == null) {
+            return false;
+        }
+        String plan = agency.getPlanType().trim().toUpperCase(Locale.ROOT);
+        if (plan.isEmpty() || "B2B_FREE".equals(plan) || "B2B_INACTIVE".equals(plan) || "INACTIVE".equals(plan) || "FREE".equals(plan)) {
+            return false;
+        }
+        return plan.startsWith("B2B_");
     }
 
     public AgencyMember requireOwner(UUID userId) {
@@ -140,7 +160,7 @@ public class AgencyService {
 
     @Transactional
     public void downgradeSubscription(Agency agency) {
-        agency.setPlanType("B2B_FREE");
+        agency.setPlanType("B2B_INACTIVE");
         agency.setStripeSubscriptionId(null);
         agencyRepository.persist(agency);
     }

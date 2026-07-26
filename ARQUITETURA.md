@@ -21,7 +21,7 @@ O **Baggagi** permite que usuários:
 
 - Autentiquem via **Neon Auth** (Google OAuth, e-mail, etc.) integrado ao Postgres Neon.
 - Criem e editem **viagens** com orçamento, datas, imagem de capa e visibilidade.
-- Organizem o roteiro em **segmentos** (cidades/períodos), com **atividades** e **refeições**.
+- Organizem o roteiro em **segmentos** (cidades/períodos), com **atividades** e, opcionalmente, **refeições**.
 - Compartilhem viagens (`trip_users`: `OWNER`, `ADMIN`, `VIEWER`), checklist e documentos (R2).
 - Usem **chat** (trip / DM / evento), **eventos** com RSVP e **feed social** (DynamoDB).
 - Assinem planos via **Stripe**; preferências de e-mail/viagem/documentos com validade.

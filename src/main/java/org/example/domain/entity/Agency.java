@@ -52,11 +52,12 @@ public class Agency extends PanacheEntityBase {
     private String primaryColor = "#000000";
 
     /**
-     * Plano da agência: B2B_FREE, B2B_PRO, etc.
+     * Plano da agência. Não há tier gratuito: só planos pagos ({@code B2B_PRO} hoje;
+     * futuros {@code B2B_*}). {@code B2B_INACTIVE} = assinatura cancelada / sem acesso ao portal.
      */
     @Column(name = "plan_type", length = 50)
     @Builder.Default
-    private String planType = "B2B_FREE";
+    private String planType = "B2B_INACTIVE";
 
     /** WhatsApp E.164 ou dígitos (ex.: 5511999999999) para CTA da proposta. */
     @Column(name = "whatsapp_number", length = 32)

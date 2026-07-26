@@ -15,6 +15,7 @@ import org.example.application.dto.common.ApiErrorBody;
 import org.example.application.dto.document.*;
 import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
+import org.example.application.services.entitlement.EntitlementService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripDocument;
 import org.example.domain.entity.User;
@@ -55,6 +56,7 @@ public class TripDocumentController {
     private final TokenService tokenService;
     private final ObjectStorageService objectStorageService;
     private final B2bAuditService auditService;
+    private final EntitlementService entitlementService;
 
     @GET
     @Path("/{tripId}/documents")
@@ -165,6 +167,8 @@ public class TripDocumentController {
             return badRequest("FILE_TOO_LARGE", "File exceeds 10 MB limit");
         }
 
+        entitlementService.requireCanUploadDocument(userIdOpt.get(), tripId, fileBytes.length);
+
         Trip trip = tripRepository.findById(tripId);
         if (trip == null) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -185,6 +189,7 @@ public class TripDocumentController {
                     .title(title.length() > 255 ? title.substring(0, 255) : title)
                     .s3Key(s3Key)
                     .contentType(upload.contentType())
+                    .sizeBytes((long) fileBytes.length)
                     .status(DocumentStatus.READY)
                     .uploadedBy(uploader)
                     .build();
@@ -280,6 +285,14 @@ public class TripDocumentController {
                     .build();
         }
 
+        long declaredBytes = req.getSizeBytes() != null && req.getSizeBytes() > 0
+                ? req.getSizeBytes()
+                : DocumentUploadSupport.MAX_UPLOAD_BYTES;
+        if (declaredBytes > DocumentUploadSupport.MAX_UPLOAD_BYTES) {
+            return badRequest("FILE_TOO_LARGE", "File exceeds 10 MB limit");
+        }
+        entitlementService.requireCanUploadDocument(userIdOpt.get(), tripId, declaredBytes);
+
         String extension = DocumentUploadSupport.extractExtension(upload.fileName());
         String s3Key = "trips/" + tripId + "/documents/" + UUID.randomUUID() + extension;
         String title = (req.getTitle() != null && !req.getTitle().isBlank())
@@ -296,6 +309,7 @@ public class TripDocumentController {
                     .title(title.length() > 255 ? title.substring(0, 255) : title)
                     .s3Key(s3Key)
                     .contentType(upload.contentType())
+                    .sizeBytes(req.getSizeBytes())
                     .status(DocumentStatus.PENDING)
                     .visibility(resolveVisibility(req.getVisibility()))
                     .uploadedBy(uploader)
@@ -311,6 +325,8 @@ public class TripDocumentController {
                     .build();
 
             return Response.status(Response.Status.CREATED).entity(body).build();
+        } catch (org.example.application.exception.EntitlementExceededException e) {
+            throw e;
         } catch (Exception e) {
             log.error(
                     "Upload request failed tripId={} userId={} fileName={} contentType={}",
@@ -384,6 +400,10 @@ public class TripDocumentController {
         }
 
         try {
+            if (req.getSizeBytes() != null && req.getSizeBytes() > 0) {
+                entitlementService.requireCanUploadDocument(userIdOpt.get(), tripId, req.getSizeBytes());
+                doc.setSizeBytes(req.getSizeBytes());
+            }
             doc.setStatus(DocumentStatus.READY);
 
             auditService.record(
@@ -393,6 +413,8 @@ public class TripDocumentController {
                     "Upload confirmado: '" + doc.getTitle() + "'");
 
             return Response.ok(toResponse(doc)).build();
+        } catch (org.example.application.exception.EntitlementExceededException e) {
+            throw e;
         } catch (Exception e) {
             log.error(
                     "Upload confirm failed tripId={} documentId={} userId={}",

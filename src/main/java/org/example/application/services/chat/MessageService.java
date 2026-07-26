@@ -5,10 +5,13 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.example.application.dto.chat.*;
 import org.example.application.exception.chat.ChatException;
+import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.User;
 import org.example.domain.entity.chat.Conversation;
+import org.example.domain.entity.chat.ConversationParticipant;
 import org.example.domain.entity.chat.Message;
 import org.example.domain.enums.MessageContentType;
+import org.example.domain.enums.NotificationKind;
 import org.example.domain.repository.UserRepository;
 import org.example.domain.repository.chat.ConversationRepository;
 import org.example.domain.repository.chat.ConversationParticipantRepository;
@@ -36,6 +39,7 @@ public class MessageService {
     private final ChatAuthorizationService authorizationService;
     private final ChatMapper chatMapper;
     private final ChatBroadcastService broadcastService;
+    private final NotificationService notificationService;
 
     @Transactional
     public MessageDTO sendMessage(UUID conversationId, UUID senderId, SendMessageRequestDTO request) {
@@ -68,7 +72,31 @@ public class MessageService {
 
         MessageDTO dto = chatMapper.toMessage(message);
         broadcastService.broadcastMessageNew(conversationId, dto);
+        notifyChatParticipants(conversationId, senderId, sender, preview);
         return dto;
+    }
+
+    private void notifyChatParticipants(
+            UUID conversationId, UUID senderId, User sender, String preview) {
+        List<UUID> recipients =
+                participantRepository.findActiveByConversation(conversationId).stream()
+                        .map(ConversationParticipant::getUser)
+                        .filter(u -> u != null && !u.id.equals(senderId))
+                        .map(u -> u.id)
+                        .toList();
+        if (recipients.isEmpty()) {
+            return;
+        }
+        String senderName =
+                sender != null && sender.getFullName() != null ? sender.getFullName() : "Alguém";
+        notificationService.createForUsers(
+                recipients,
+                NotificationKind.CHAT_MESSAGE,
+                "Nova mensagem de " + senderName,
+                preview,
+                "CONVERSATION",
+                conversationId,
+                true);
     }
 
     @Transactional

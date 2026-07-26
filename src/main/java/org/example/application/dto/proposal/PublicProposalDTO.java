@@ -29,6 +29,10 @@ public class PublicProposalDTO {
     private String currency;
     private BigDecimal finalPrice;
     private ProposalStatus proposalStatus;
+    /** true quando ainda há valor a pagar (não CONFIRMED e finalPrice &gt; 0). */
+    private Boolean paymentRequired;
+    /** Valor sugerido de sinal (30% do finalPrice). */
+    private BigDecimal depositAmount;
     private AgencyBrandingDTO agency;
     private List<TripSegmentDTO> segments;
     private List<ProposalTierDTO> tiers;

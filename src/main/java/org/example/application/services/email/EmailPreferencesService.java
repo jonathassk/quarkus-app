@@ -27,9 +27,22 @@ public class EmailPreferencesService {
     public UserEmailPreferencesDTO updatePreferences(UUID userId, UserEmailPreferencesDTO request) {
         UserEmailPreferences prefs = getOrCreate(userId);
         if (request != null) {
-            prefs.setEmailUpdates(request.isEmailUpdates());
-            prefs.setTripReminders(request.isTripReminders());
-            prefs.setDocumentExpiryAlerts(request.isDocumentExpiryAlerts());
+            // Só atualiza campos presentes (Boolean nullable) — evita zerar omitidos no PATCH.
+            if (request.getEmailUpdates() != null) {
+                prefs.setEmailUpdates(request.getEmailUpdates());
+            }
+            if (request.getTripReminders() != null) {
+                prefs.setTripReminders(request.getTripReminders());
+            }
+            if (request.getDocumentExpiryAlerts() != null) {
+                prefs.setDocumentExpiryAlerts(request.getDocumentExpiryAlerts());
+            }
+            if (request.getInAppNotifications() != null) {
+                prefs.setInAppNotifications(request.getInAppNotifications());
+            }
+            if (request.getActivityEmails() != null) {
+                prefs.setActivityEmails(request.getActivityEmails());
+            }
         }
         preferencesRepository.persist(prefs);
         return toDto(prefs);
@@ -48,6 +61,8 @@ public class EmailPreferencesService {
                     .emailUpdates(true)
                     .tripReminders(true)
                     .documentExpiryAlerts(true)
+                    .inAppNotifications(true)
+                    .activityEmails(true)
                     .build();
             preferencesRepository.persist(prefs);
         }
@@ -59,6 +74,8 @@ public class EmailPreferencesService {
                 .emailUpdates(prefs.isEmailUpdates())
                 .tripReminders(prefs.isTripReminders())
                 .documentExpiryAlerts(prefs.isDocumentExpiryAlerts())
+                .inAppNotifications(prefs.isInAppNotifications())
+                .activityEmails(prefs.isActivityEmails())
                 .build();
     }
 }
