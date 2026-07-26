@@ -119,10 +119,14 @@ public class TripServiceImpl implements TripService {
 
         if (segmentDTO.getMeals() != null && !segmentDTO.getMeals().isEmpty()) {
             segment.setMeals(createMeals(segmentDTO.getMeals(), segment));
+        } else {
+            segment.setMeals(new ArrayList<>());
         }
 
         if (segmentDTO.getActivities() != null && !segmentDTO.getActivities().isEmpty()) {
             segment.setActivities(createActivities(segmentDTO.getActivities(), segment));
+        } else {
+            segment.setActivities(new ArrayList<>());
         }
 
         return segment;

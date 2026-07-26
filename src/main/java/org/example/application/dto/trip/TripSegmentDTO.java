@@ -25,6 +25,7 @@ public class TripSegmentDTO {
     private int endDay;
     private String notes;
     private BigDecimal dailyCost;
+    /** Pode ser null ou vazio — o planejamento permite viagens só com atividades (sem refeições). */
     private List<MealDTO> meals;
     private List<ActivityDTO> activities;
 }
