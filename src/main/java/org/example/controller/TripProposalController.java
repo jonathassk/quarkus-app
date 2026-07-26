@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.dto.common.ApiErrorBody;
+import org.example.application.dto.proposal.SendProposalRequest;
 import org.example.application.dto.proposal.UpdateProposalStatusRequest;
 import org.example.application.dto.proposal.UpdateTripPricingRequest;
 import org.example.application.dto.proposal.UpsertProposalTiersRequest;
@@ -63,13 +64,19 @@ public class TripProposalController {
     @POST
     @Path("/{tripId}/proposal/send")
     @Transactional
-    @Operation(summary = "Marcar proposta como SENT e garantir shareCode")
+    @Operation(
+        summary = "Enviar proposta ao cliente",
+        description = "Marca a proposta como SENT, garante o shareCode e dispara o e-mail branded da agência. "
+                + "O corpo é opcional: sem `clientEmail`, reutiliza o contato salvo na viagem (obrigatório no primeiro envio). "
+                + "Reenviar é chamar o mesmo endpoint novamente."
+    )
     public Response send(
             @PathParam("tripId") UUID tripId,
+            SendProposalRequest request,
             @Context HttpHeaders headers) {
         return withUser(headers, userId ->
                 Response.ok(TripMapper.mapToTripResponseDTO(
-                        proposalService.sendProposal(tripId, userId))).build());
+                        proposalService.sendProposal(tripId, userId, request))).build());
     }
 
     @PATCH

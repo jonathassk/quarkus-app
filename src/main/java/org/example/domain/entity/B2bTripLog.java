@@ -52,10 +52,18 @@ public class B2bTripLog extends PanacheEntityBase {
     @JoinColumn(name = "trip_id", nullable = false)
     private Trip trip;
 
-    /** Usuário que executou a operação (consultor ou dono da agência). */
+    /**
+     * Usuário que executou a operação (consultor ou dono da agência).
+     * Nulo em ações feitas pelo cliente via link público — nesse caso o ator é
+     * descrito em {@link #actorLabel}.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "actor_user_id", nullable = false)
+    @JoinColumn(name = "actor_user_id")
     private User actorUser;
+
+    /** Identificação do ator quando não há usuário autenticado (ex.: "Cliente (link público)"). */
+    @Column(name = "actor_label", length = 255)
+    private String actorLabel;
 
     /** Tipo de operação realizada. */
     @Enumerated(EnumType.STRING)

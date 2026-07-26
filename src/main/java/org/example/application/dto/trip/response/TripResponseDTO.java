@@ -40,4 +40,14 @@ public class TripResponseDTO {
     private BigDecimal finalPrice;
     private String shareCode;
     private String currency;
+    /** Destinatário do último envio da proposta. */
+    private String proposalClientEmail;
+    private String proposalClientName;
+    private java.time.Instant proposalSentAt;
+    /** Export em PDF liberado nesta viagem por pagamento avulso. */
+    private boolean unlockedExportPdf;
+    /** Gerações de IA liberadas nesta viagem por pagamento avulso. */
+    private boolean unlockedAi;
+    /** Verdadeiro quando algum benefício avulso foi liberado nesta viagem. */
+    private boolean unlocked;
 }

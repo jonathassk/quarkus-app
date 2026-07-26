@@ -161,6 +161,33 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
 
     @Override
     @Transactional
+    public Trip patchTrip(UUID tripId, org.example.application.dto.trip.request.PatchTripRequestDTO request) {
+        Trip trip = tripRepository.findByIdWithLock(tripId);
+        if (trip == null) {
+            throw new NotFoundException("Trip not found with id: " + tripId);
+        }
+        if (request == null) {
+            throw new IllegalArgumentException("Request body is required");
+        }
+        if (request.getName() != null) {
+            trip.setName(request.getName());
+        }
+        if (request.getDescription() != null) {
+            trip.setDescription(request.getDescription());
+        }
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            if (trip.getStartDate() != null && trip.getEndDate() != null) {
+                throw new IllegalArgumentException(
+                        "Cannot set status manually when the trip has fixed start/end dates; status follows the calendar");
+            }
+            trip.setStatus(org.example.domain.enums.TripStatus.fromClientValue(request.getStatus()));
+        }
+        trip.setUpdatedAt(Instant.now());
+        return tripRepository.updateTrip(trip);
+    }
+
+    @Override
+    @Transactional
     public void deleteTrip(UUID tripId, UUID requesterUserId) {
         Trip trip = tripRepository.findById(tripId);
         if (trip == null) {

@@ -20,6 +20,7 @@ import org.example.application.dto.trip.response.TripResponseDTO;
 import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
 import org.example.application.services.TripCollaborationService;
+import org.example.application.services.payment.TripUnlockService;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.enums.AgencyRole;
@@ -64,6 +65,7 @@ public class TripController {
     private final TripCollaborationService tripCollaborationService;
     private final AgencyMemberRepository agencyMemberRepository;
     private final B2bAuditService auditService;
+    private final TripUnlockService tripUnlockService;
 
     private static final String UNAUTHORIZED_MSG = "Invalid or expired token";
     private static final String AUTH_HEADER_MSG = "Missing or invalid Authorization header";
@@ -227,8 +229,12 @@ public class TripController {
             log.warn("List trips rejected: invalid token");
             return unauthorizedResponse();
         }
-        List<TripResponseDTO> trips = tripRepository.findAllByLinkedUserId(userIdOpt.get()).stream()
-                .map(t -> TripMapper.mapToTripResponseDTO(t, tripCollaborationService))
+        List<Trip> found = tripRepository.findAllByLinkedUserId(userIdOpt.get());
+        var unlocksByTrip = tripUnlockService.listKindsByTrips(
+                found.stream().map(t -> t.id).collect(Collectors.toList()));
+        List<TripResponseDTO> trips = found.stream()
+                .map(t -> TripMapper.mapToTripResponseDTO(t, tripCollaborationService,
+                        unlocksByTrip.getOrDefault(t.id, java.util.Set.of())))
                 .collect(Collectors.toList());
         return Response.ok(trips).build();
     }
@@ -296,8 +302,53 @@ public class TripController {
             return denied;
         }
         Trip trip = tripRepository.findById(tripId);
-        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(trip, tripCollaborationService);
+        TripResponseDTO tripResponse = TripMapper.mapToTripResponseDTO(
+                trip, tripCollaborationService, tripUnlockService.listKinds(tripId));
         return Response.ok(tripResponse).build();
+    }
+
+    @PATCH
+    @Path("/{tripId}")
+    @Transactional
+    @Operation(
+        summary = "Atualizar viagem parcialmente",
+        description = "Atualiza campos opcionais (nome, descrição, status). " +
+                      "Status manual só é permitido em viagens sem datas fixas (startDate/endDate nulos)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Viagem atualizada"),
+        @APIResponse(responseCode = "400", description = "Status inválido ou viagem com datas fixas"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Sem permissão de edição"),
+        @APIResponse(responseCode = "404", description = "Viagem não encontrada")
+    })
+    public Response patchTrip(
+            @PathParam("tripId") UUID tripId,
+            org.example.application.dto.trip.request.PatchTripRequestDTO request,
+            @Context HttpHeaders headers) {
+        Response denied = ensureTripEditor(tripId, headers);
+        if (denied != null) {
+            return denied;
+        }
+        try {
+            Trip updated = updateTripUseCase.patchTrip(tripId, request);
+            TripResponseDTO tripResponse =
+                    TripMapper.mapToTripResponseDTO(updated, tripCollaborationService);
+            resolveAuthenticatedUserId(headers).ifPresent(uid ->
+                    auditService.record(updated, uid,
+                            B2bTripLogAction.TRIP_STATUS_CHANGED,
+                            "Viagem atualizada via PATCH"));
+            return Response.ok(tripResponse).build();
+        } catch (NotFoundException e) {
+            return Response.status(Response.Status.NOT_FOUND).entity(e.getMessage()).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
+        } catch (Exception e) {
+            log.error("Patch trip failed: tripId={}", tripId, e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("An error occurred while patching the trip: " + e.getMessage())
+                    .build();
+        }
     }
 
     @PUT

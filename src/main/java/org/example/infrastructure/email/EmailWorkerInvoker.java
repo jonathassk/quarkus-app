@@ -40,18 +40,49 @@ public class EmailWorkerInvoker {
      * Invoke assíncrono (Event). Retorna false se o worker não estiver configurado.
      */
     public boolean enqueueDirectEmail(String toEmail, String subject, String textBody, String htmlBody) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("toEmail", toEmail);
+        payload.put("subject", subject);
+        payload.put("textBody", textBody != null ? textBody : "");
+        payload.put("htmlBody", htmlBody != null ? htmlBody : "");
+        return enqueue("send_direct", toEmail, payload);
+    }
+
+    /**
+     * E-mail com a identidade visual da agência.
+     *
+     * @param templateKind {@code proposal_sent}, {@code boarding_reminder} ou {@code post_trip}.
+     */
+    public boolean enqueueWhiteLabelEmail(String toEmail, String agencyId, String templateKind,
+                                          String tripName, String shareUrl) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("toEmail", toEmail);
+        payload.put("agencyId", agencyId != null ? agencyId : "");
+        payload.put("templateKind", templateKind);
+        payload.put("tripName", tripName != null ? tripName : "");
+        payload.put("shareUrl", shareUrl != null ? shareUrl : "");
+        return enqueue("send_white_label", toEmail, payload);
+    }
+
+    /**
+     * Enfileira qualquer action suportada pelo worker. O {@code action} é injetado no payload.
+     */
+    public boolean enqueue(String action, String toEmail, Map<String, Object> fields) {
         if (!isConfigured()) {
-            log.info("email-worker not configured — skipping enqueue to={}", toEmail);
+            log.info("email-worker not configured — skipping enqueue action={} to={}", action, toEmail);
             return false;
         }
 
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("action", "send_direct");
-            payload.put("toEmail", toEmail);
-            payload.put("subject", subject);
-            payload.put("textBody", textBody != null ? textBody : "");
-            payload.put("htmlBody", htmlBody != null ? htmlBody : "");
+            payload.put("action", action);
+            if (fields != null) {
+                fields.forEach((k, v) -> {
+                    if (!"action".equals(k)) {
+                        payload.put(k, v);
+                    }
+                });
+            }
 
             byte[] json = objectMapper.writeValueAsBytes(payload);
             InvokeRequest request = InvokeRequest.builder()
@@ -61,10 +92,10 @@ public class EmailWorkerInvoker {
                     .build();
 
             lambdaClient.invoke(request);
-            log.info("email-worker enqueue ok action=send_direct to={}", toEmail);
+            log.info("email-worker enqueue ok action={} to={}", action, toEmail);
             return true;
         } catch (Exception e) {
-            log.error("email-worker enqueue failed to={}: {}", toEmail, e.getMessage());
+            log.error("email-worker enqueue failed action={} to={}: {}", action, toEmail, e.getMessage());
             return false;
         }
     }

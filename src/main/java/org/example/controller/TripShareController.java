@@ -51,7 +51,9 @@ public class TripShareController {
     @Transactional
     @Operation(
         summary = "Compartilhar viagem com colaboradores",
-        description = "Adiciona novos usuários colaboradores à viagem com o nível de permissão especificado (READ, EDIT, MANAGE)."
+        description = "Adiciona novos usuários colaboradores à viagem com o nível de permissão especificado. "
+                + "Valores aceitos: ADMIN (edita e gerencia membros) ou VIEWER (somente leitura). "
+                + "OWNER é atribuído apenas ao criador da viagem e não pode ser concedido por este endpoint."
     )
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Viagem compartilhada com sucesso"),
@@ -144,7 +146,8 @@ public class TripShareController {
     @Transactional
     @Operation(
         summary = "Atualizar permissão de colaborador",
-        description = "Modifica o nível de permissão de um colaborador já existente (READ, EDIT, MANAGE)."
+        description = "Modifica o nível de permissão de um colaborador já existente. "
+                + "Valores aceitos: ADMIN ou VIEWER (OWNER é exclusivo do criador da viagem)."
     )
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Permissão do colaborador atualizada com sucesso"),

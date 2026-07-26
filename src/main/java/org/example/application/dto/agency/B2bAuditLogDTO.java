@@ -15,6 +15,8 @@ public class B2bAuditLogDTO {
     private UUID tripId;
     private UUID actorUserId;
     private String actorEmail;
+    /** Ator sem sessão (cliente via link público) — nulo quando há usuário autenticado. */
+    private String actorLabel;
     private B2bTripLogAction action;
     private String entityType;
     private UUID entityId;

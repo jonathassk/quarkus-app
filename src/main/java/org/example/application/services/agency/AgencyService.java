@@ -216,6 +216,7 @@ public class AgencyService {
                 .tripId(l.getTrip() != null ? l.getTrip().id : null)
                 .actorUserId(l.getActorUser() != null ? l.getActorUser().id : null)
                 .actorEmail(l.getActorUser() != null ? l.getActorUser().getEmail() : null)
+                .actorLabel(l.getActorLabel())
                 .action(l.getAction())
                 .entityType(l.getEntityType())
                 .entityId(l.getEntityId())

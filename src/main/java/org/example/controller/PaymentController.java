@@ -31,6 +31,8 @@ import org.example.domain.enums.UserType;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 import org.example.application.services.agency.AgencyService;
+import org.example.application.services.payment.StripeEventService;
+import org.example.application.services.payment.TripUnlockService;
 import org.example.utils.RequestAuthHeaders;
 
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -60,6 +62,8 @@ public class PaymentController {
     private final TripRepository tripRepository;
     private final TokenService tokenService;
     private final AgencyService agencyService;
+    private final StripeEventService stripeEventService;
+    private final TripUnlockService tripUnlockService;
 
     @ConfigProperty(name = "stripe.api.key")
     Optional<String> apiKey;
@@ -148,11 +152,17 @@ public class PaymentController {
             if (path == null || path.isBlank()) {
                 return fallbackUrl;
             }
-            return origin + path;
+            String query = uri.getRawQuery();
+            return query != null && !query.isBlank() ? origin + path + "?" + query : origin + path;
         } catch (Exception e) {
             log.warn("Invalid Stripe redirect URL: {}", requestedUrl, e);
             return fallbackUrl;
         }
+    }
+
+    /** O placeholder do Stripe é resolvido no redirect; a query já validada é preservada. */
+    private static String withSessionIdParam(String url) {
+        return url + (url.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
     }
 
     private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
@@ -228,7 +238,7 @@ public class PaymentController {
             String resolvedCancelUrl = resolveRedirectUrl(request.getCancelUrl(), cancelUrl);
 
             SessionCreateParams.Builder paramsBuilder = SessionCreateParams.builder()
-                    .setSuccessUrl(resolvedSuccessUrl + "?session_id={CHECKOUT_SESSION_ID}")
+                    .setSuccessUrl(withSessionIdParam(resolvedSuccessUrl))
                     .setCancelUrl(resolvedCancelUrl);
 
             if ("UNITARIO".equals(request.getPaymentType())) {
@@ -276,6 +286,7 @@ public class PaymentController {
             // Metadados na sessão de checkout
             paramsBuilder.putMetadata("targetId", request.getTargetId().toString());
             paramsBuilder.putMetadata("paymentType", request.getPaymentType());
+            paramsBuilder.putMetadata("userId", userIdOpt.get().toString());
 
             Session session = Session.create(paramsBuilder.build());
 
@@ -323,6 +334,11 @@ public class PaymentController {
 
         log.info("Received Stripe webhook event: {}", event.getType());
 
+        if (!stripeEventService.claim(event.getId(), event.getType())) {
+            log.info("Stripe event {} already processed — skipping (type={})", event.getId(), event.getType());
+            return Response.ok().build();
+        }
+
         try {
             switch (event.getType()) {
                 case "checkout.session.completed":
@@ -332,7 +348,8 @@ public class PaymentController {
                         String paymentType = session.getMetadata().get("paymentType");
                         String subscriptionId = session.getSubscription();
                         if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId);
+                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId,
+                                    fulfillmentOf(session));
                         }
                     }
                     break;
@@ -365,6 +382,7 @@ public class PaymentController {
             }
         } catch (Exception e) {
             log.error("Error processing Stripe webhook event: {}", event.getType(), e);
+            stripeEventService.release(event.getId());
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("Webhook processing failed: " + e.getMessage())
                     .build();
@@ -373,13 +391,42 @@ public class PaymentController {
         return Response.ok().build();
     }
 
+    /**
+     * Dados da sessão de checkout necessários para cumprir um pagamento avulso.
+     * Nulo nos fluxos de assinatura, que não geram desbloqueio por viagem.
+     */
+    public record CheckoutFulfillment(String sessionId, UUID userId, java.math.BigDecimal amount, String currency) {}
+
+    private static CheckoutFulfillment fulfillmentOf(Session session) {
+        UUID userId = null;
+        String userIdStr = session.getMetadata().get("userId");
+        if (userIdStr != null && !userIdStr.isBlank()) {
+            try {
+                userId = UUID.fromString(userIdStr.trim());
+            } catch (IllegalArgumentException e) {
+                log.warn("Checkout session {} has invalid userId metadata: {}", session.getId(), userIdStr);
+            }
+        }
+        java.math.BigDecimal amount = session.getAmountTotal() != null
+                ? java.math.BigDecimal.valueOf(session.getAmountTotal()).movePointLeft(2)
+                : null;
+        String currency = session.getCurrency() != null ? session.getCurrency().toUpperCase() : null;
+        return new CheckoutFulfillment(session.getId(), userId, amount, currency);
+    }
+
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType) {
-        processSuccessfulPayment(targetId, paymentType, null);
+        processSuccessfulPayment(targetId, paymentType, null, null);
     }
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId) {
+        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, null);
+    }
+
+    @Transactional
+    public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId,
+                                         CheckoutFulfillment fulfillment) {
         log.info("Processing successful payment: targetId={}, paymentType={}, sub={}",
                 targetId, paymentType, stripeSubscriptionId);
         if ("MENSAL".equals(paymentType) || "ANUAL".equals(paymentType)) {
@@ -400,7 +447,12 @@ public class PaymentController {
                 log.info("Workspace {} updated to B2B_PRO", targetId);
             }
         } else if ("UNITARIO".equals(paymentType)) {
-            log.info("Single trip payment verified for Trip ID: {}", targetId);
+            tripUnlockService.grantUnitario(
+                    targetId,
+                    fulfillment != null ? fulfillment.userId() : null,
+                    fulfillment != null ? fulfillment.sessionId() : null,
+                    fulfillment != null ? fulfillment.amount() : null,
+                    fulfillment != null ? fulfillment.currency() : null);
         }
     }
 

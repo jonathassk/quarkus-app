@@ -25,11 +25,11 @@ Use este arquivo para decisões futuras (novos módulos, trocas de infra, contra
 
 - Contas B2C (FREE / PREMIUM via Stripe)
 - Colaboração em viagens (share + permissões)
-- Documentos, checklist, posts sociais
+- Documentos (R2), checklist, posts sociais (DynamoDB)
 - Chat (trip / DM / event) com fan-out WebSocket externo
 - Eventos (RSVP, feed, chat)
-- B2B (agências, guests via Magic Link, auditoria)
-- Preferências de e-mail (envio feito por worker separado)
+- Preferências de e-mail, viagem e documentos com validade (envio SES via `email-worker`)
+- B2B: agências (branding, equipe), propostas interativas (tiers, shareCode público), guests via Magic Link, auditoria
 
 ### Este repositório
 
@@ -60,7 +60,7 @@ Use este arquivo para decisões futuras (novos módulos, trocas de infra, contra
 | HTTP | RESTEasy + JSON-B + multipart | API REST; upload de docs via API |
 | ORM | Hibernate ORM + **Panache** | Repositórios leves; entities = Panache |
 | DB | **Neon PostgreSQL** | Serverless Postgres; Auth no mesmo projeto |
-| Migrations | **Flyway** (`V1`, `V2`) | Schema versionado; baseline UUID |
+| Migrations | **Flyway** (`V1`…`V6`) | Schema versionado; baseline UUID |
 | Auth JWT | Neon Auth **EdDSA** + JWT legado **RS256** | Front usa Neon; login e-mail/senha e Magic Link ainda RS256 |
 | Deploy | **AWS Lambda** + API Gateway HTTP API + **SnapStart** | Serverless; `QUARKUS_PROFILE=lambda` |
 | Secrets | AWS Secrets Manager `baggagi/back/<env>` | Injetados no SAM |
@@ -231,6 +231,7 @@ flowchart TB
 - `Workspace` + `WorkspaceMember` — agrupamento / billing (Stripe aponta para workspace).
 - `Agency` + `AgencyMember` — tenant B2B; `Trip.agency` null = B2C.
 - `B2bTripLog` — auditoria de ações B2B.
+- Preferências do usuário: `UserTravelPreferences`, `DocumentExpiry` (passaporte/visto/CNH/custom + alertas).
 
 ---
 
@@ -265,6 +266,8 @@ Trip
 | CRUD | `/{tripId}/checklist…` | Checklist |
 | GET/POST… | `/{tripId}/documents…` | Documentos |
 | GET/POST | `/{tripId}/chat` | Status / criar chat da trip |
+| PATCH/PUT/POST | `/{tripId}/pricing`, `/tiers`, `/proposal/…` | Proposta B2B (ver §5.9) |
+| POST | `/{tripId}/email` | E-mail pontual do roteiro → `email-worker` |
 
 **Escolha:** roteiro rico e aninhado no mesmo aggregate de viagem (não CQRS). Bom para edição colaborativa simples; atenção a payloads grandes no update.
 
@@ -370,12 +373,49 @@ Não há entidade `Payment` rica no domínio — estado vive em Stripe + campos 
 | Peça | Responsabilidade |
 |------|------------------|
 | Quarkus | `UserEmailPreferences` + `GET/PATCH /users/me/email-preferences` |
+| Quarkus | `POST /trips/{id}/email` → invoke `send_direct` no worker |
 | Flyway V2 | `user_email_preferences`, `email_notification_log` |
-| `email-worker` | Lê DB, envia SES (lembretes de trip, updates de produto); cron EventBridge 2×/dia UTC |
+| `email-worker` | Lê DB, envia SES (lembretes de trip, document expiry, updates, white-label); cron EventBridge 2×/dia UTC |
 
-Detalhes operacionais: [SES_SETUP.md](SES_SETUP.md).
+Detalhes operacionais: [SES_SETUP.md](SES_SETUP.md), [services/email-worker/README.md](../services/email-worker/README.md).
 
 **Escolha:** não colocar SES no hot path da API Lambda (timeout, cold start, falhas de e-mail não derrubam a API).
+
+---
+
+### 5.9 B2B — agência e propostas
+
+**Agência (`AgencyController` `/api/v1/agency`):**
+
+| Path | Função |
+|------|--------|
+| `GET/PATCH /me` | Branding white-label |
+| `POST /me/logo-upload-request` + `/logo-confirm` | Logo no R2 |
+| `GET/POST /team`, `DELETE /team/{userId}` | Membros (OWNER) |
+| `GET /audit` | Histórico `B2bTripLog` |
+| `GET /pipeline` | Kanban de propostas |
+| `GET /analytics` | Conversão / destinos / faturamento previsto |
+
+**Propostas (`TripProposalController` + `PublicProposalController`):**
+
+- Editor: `PATCH /trips/{id}/pricing`, `PUT /trips/{id}/tiers`, `POST …/proposal/send`, `PATCH …/proposal/status`.
+- Campos em `Trip`: `proposalStatus`, `baseCost`, `finalPrice`, `shareCode`, markup da agência.
+- `TripProposalTier` — opções Econômica/Luxo etc. no mesmo link.
+- Público: `GET/POST /api/v1/public/proposals/{shareCode}` (+ approve).
+- Guest: Magic Link (`AuthController`) + `GuestClaimService`.
+
+Flyway **V6** — branding, tiers, `share_code`, visibilidade de documentos (`CLIENT` / interno).
+
+---
+
+### 5.10 Preferências e documentos pessoais
+
+| API | Domínio |
+|-----|---------|
+| `/users/me/travel-preferences` | Preferências de viagem (`UserTravelPreferences`, Flyway V5) |
+| `/users/me/documents` | Validade (passaporte, visto, CNH, custom) + alertas (`DocumentExpiry`, V3/V4) |
+
+Alertas de expiração são enviados pelo `email-worker` (`document_expiry_reminders`), não no request path.
 
 ---
 
@@ -389,11 +429,17 @@ Base: **`/api/v1`**.
 | `UserController` | `/users` | create/login, search, profile, avatar, visited-countries |
 | `ChatPrivacyController` | `/users` | privacy, chat-eligibility |
 | `EmailPreferencesController` | `/users/me/email-preferences` | prefs e-mail |
+| `TravelPreferencesController` | `/users/me/travel-preferences` | prefs de viagem |
+| `DocumentExpiryController` | `/users/me/documents` | validade + alertas |
 | `TripController` | `/trips` | CRUD viagem |
 | `TripShareController` | `/trips` | share |
 | `TripChecklistController` | `/trips` | checklist |
 | `TripDocumentController` | `/trips` | documentos |
 | `TripChatController` | `/trips` | chat da trip |
+| `TripProposalController` | `/trips` | pricing, tiers, proposta |
+| `TripEmailController` | `/trips/{id}/email` | e-mail pontual do roteiro |
+| `PublicProposalController` | `/public/proposals` | proposta pública |
+| `AgencyController` | `/agency` | branding, team, audit, pipeline, analytics |
 | `ChatController` | `/chat` | inbox, DMs, messages, ws-token |
 | `EventController` | `/events` | eventos + RSVP |
 | `EventPostController` | `/events` | feed do evento |
@@ -412,6 +458,9 @@ Filtros relevantes: rate limit chat/events, `EventsEnabledFilter`, exception map
 - PKs de aplicação: **UUID** (Hibernate `@UuidGenerator` **VERSION_7**).
 - Baseline Flyway: `V1__baseline_uuid_schema.sql` (consolidação pré-lançamento; substitui a era Long/sequence).
 - `V2__email_notifications.sql` — prefs + log de envio.
+- `V3` / `V4` — document expiry + preferência de alertas.
+- `V5__user_travel_preferences.sql` — preferências de viagem.
+- `V6__b2b_agency_enhancements.sql` — branding, propostas, tiers, visibilidade de docs.
 
 ### Dual JDBC (escolha Neon)
 
@@ -637,8 +686,11 @@ Checklist rápido antes de implementar algo novo:
 | Storage | `ObjectStorageService` |
 | Posts | `PostService`, `PostDynamoRepository` |
 | E-mail prefs | `EmailPreferencesService` |
+| Document expiry | `DocumentExpiryService` |
+| Travel prefs | `TravelPreferencesService` |
+| B2B / propostas | `AgencyService`, `ProposalService`, `B2bAuditService`, `GuestClaimService` |
 | Infra Lambda | `SnapStartFlywayMigrator` |
 
 ---
 
-*Última atualização alinhada ao código em Jul/2026 (Quarkus 3.24.5, Flyway V1+V2 UUID, módulos chat/events/email-worker).*
+*Última atualização alinhada ao código em Jul/2026 (Quarkus 3.24.5, Flyway V1–V6 UUID, chat/events/B2B/propostas/email-worker).*

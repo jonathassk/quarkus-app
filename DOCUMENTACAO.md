@@ -1,7 +1,10 @@
 # Documentação do Projeto Quarkus App
 
 > **Arquitetura de ponta a ponta (DNS, AWS, Neon Auth, frontend, Neon):** veja **[ARQUITETURA.md](ARQUITETURA.md)**.  
+> **Referência atual do backend (domínios, APIs, decisões):** veja **[docs/BACKEND.md](docs/BACKEND.md)** e **[README.md](README.md)**.  
 > **Deploy e erros em produção:** veja **[DEPLOY.md](DEPLOY.md)**.
+>
+> Este arquivo é legado (DTOs/endpoints iniciais). Em conflito, prevalecem o código e `docs/BACKEND.md`.
 
 ## Visão Geral
 

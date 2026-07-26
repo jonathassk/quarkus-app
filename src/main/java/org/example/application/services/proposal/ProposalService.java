@@ -38,6 +38,10 @@ public class ProposalService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final char[] SHARE_ALPHABET =
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".toCharArray();
+    /** Ator das ações feitas sem sessão, pelo link público da proposta. */
+    private static final String PUBLIC_CLIENT_ACTOR_LABEL = "Cliente (link público)";
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+            java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s.]+\\.[^@\\s]+$");
 
     @Inject
     TripRepository tripRepository;
@@ -49,6 +53,11 @@ public class ProposalService {
     AgencyService agencyService;
     @Inject
     B2bAuditService auditService;
+    @Inject
+    org.example.infrastructure.email.EmailWorkerInvoker emailWorkerInvoker;
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "app.public-url")
+    String appPublicUrl;
 
     public static String generateShareCode() {
         char[] buf = new char[12];
@@ -71,15 +80,15 @@ public class ProposalService {
         trip.setProposalStatus(ProposalStatus.APPROVED);
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
-        auditService.record(
+        auditService.recordExternalActor(
                 trip,
-                trip.getCreatedBy() != null ? trip.getCreatedBy().id : null,
+                PUBLIC_CLIENT_ACTOR_LABEL,
                 B2bTripLogAction.PROPOSAL_APPROVED,
                 "TRIP",
                 trip.id,
                 null,
                 "{\"proposalStatus\":\"APPROVED\"}",
-                "Proposta aprovada pelo cliente via Magic Link",
+                "Proposta aprovada pelo cliente na página pública",
                 null);
         return toPublicDto(trip);
     }
@@ -149,19 +158,63 @@ public class ProposalService {
     }
 
     @Transactional
-    public Trip sendProposal(UUID tripId, UUID userId) {
+    public Trip sendProposal(UUID tripId, UUID userId, SendProposalRequest request) {
         Trip trip = requireAgencyTripAccess(tripId, userId);
         if (trip.getShareCode() == null || trip.getShareCode().isBlank()) {
             trip.setShareCode(generateUniqueShareCode());
         }
+
+        String clientEmail = resolveClientEmail(trip, request);
+        if (request != null && request.getClientName() != null && !request.getClientName().isBlank()) {
+            trip.setProposalClientName(request.getClientName().trim());
+        }
+        trip.setProposalClientEmail(clientEmail);
+
+        Instant now = Instant.now();
         trip.setProposalStatus(ProposalStatus.SENT);
-        trip.setLastContactAt(Instant.now());
+        trip.setLastContactAt(now);
+        trip.setProposalSentAt(now);
         tripRepository.persist(trip);
+
+        boolean queued = emailWorkerInvoker.enqueueWhiteLabelEmail(
+                clientEmail,
+                trip.getAgency() != null ? trip.getAgency().id.toString() : null,
+                "proposal_sent",
+                trip.getName(),
+                publicProposalUrl(trip.getShareCode()));
+        if (!queued) {
+            log.warn("Proposal e-mail not queued for tripId={} to={}", trip.id, clientEmail);
+        }
+
         auditService.record(
                 trip, userId, B2bTripLogAction.PROPOSAL_SENT,
-                "TRIP", trip.id, null, null,
-                "Proposta enviada ao cliente", null);
+                "TRIP", trip.id, null,
+                "{\"proposalStatus\":\"SENT\",\"emailQueued\":" + queued + "}",
+                "Proposta enviada para " + clientEmail, null);
         return trip;
+    }
+
+    private String resolveClientEmail(Trip trip, SendProposalRequest request) {
+        String requested = request != null && request.getClientEmail() != null
+                ? request.getClientEmail().trim()
+                : null;
+        String email = requested != null && !requested.isBlank() ? requested : trip.getProposalClientEmail();
+        if (email == null || email.isBlank()) {
+            throw new BadRequestException("clientEmail is required to send the proposal");
+        }
+        email = email.trim().toLowerCase();
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            throw new BadRequestException("clientEmail is invalid");
+        }
+        return email;
+    }
+
+    private String publicProposalUrl(String shareCode) {
+        String base = appPublicUrl != null ? appPublicUrl.trim() : "";
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/p/" + shareCode;
     }
 
     @Transactional

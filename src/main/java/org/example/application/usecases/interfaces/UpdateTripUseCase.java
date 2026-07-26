@@ -15,6 +15,9 @@ public interface UpdateTripUseCase {
     Trip updateTripUserRelation(UUID tripId, UUID userId, String permissionLevel);
     Trip updateNameAndDescription(UUID tripId, NameDescriptionTravelRequestDto tripRequestDTO);
 
+    /** Atualização parcial (status, nome, descrição). */
+    Trip patchTrip(UUID tripId, org.example.application.dto.trip.request.PatchTripRequestDTO request);
+
     /** Apaga a viagem; somente o usuário criador pode executar. */
     void deleteTrip(UUID tripId, UUID requesterUserId);
 }

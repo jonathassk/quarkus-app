@@ -27,4 +27,20 @@ public enum TripStatus {
         }
         return ONGOING;
     }
+
+    /**
+     * Converte status vindo do cliente (front usa {@code confirmed} para "em andamento").
+     */
+    public static TripStatus fromClientValue(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("status is required");
+        }
+        String v = value.trim().toUpperCase().replace('-', '_');
+        return switch (v) {
+            case "PLANNING" -> PLANNING;
+            case "ONGOING", "CONFIRMED" -> ONGOING;
+            case "COMPLETED" -> COMPLETED;
+            default -> throw new IllegalArgumentException("Invalid trip status: " + value);
+        };
+    }
 }

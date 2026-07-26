@@ -175,8 +175,12 @@ public class AuthController {
         }
         try {
             String token = magicLinkService.generateMagicLinkToken(body.getEmail(), body.getTripId());
-            // Envio de e-mail: Lambda Go (email-worker). Em dev, log do token.
-            log.info("[MAGIC_LINK_DEV] token para email={} tripId={}: {}", body.getEmail(), body.getTripId(), token);
+            boolean queued = magicLinkService.sendMagicLinkEmail(body.getEmail(), body.getTripId(), token);
+            if (!queued && io.quarkus.runtime.LaunchMode.current().isDevOrTest()) {
+                // Sem worker configurado em dev, o token vai para o log para permitir o teste manual.
+                log.info("[MAGIC_LINK_DEV] token para email={} tripId={}: {}",
+                        body.getEmail(), body.getTripId(), token);
+            }
 
             // Retorna 200 mesmo em caso de e-mail não vinculado para evitar enumeração
             return Response.ok(Map.of("message", "Se este e-mail estiver vinculado à viagem, você receberá um link de acesso.")).build();

@@ -155,7 +155,8 @@ public class ApplicationConfig {
             TokenService tokenService,
             org.example.application.services.TripCollaborationService tripCollaborationService,
             AgencyMemberRepository agencyMemberRepository,
-            org.example.application.services.B2bAuditService auditService) {
+            org.example.application.services.B2bAuditService auditService,
+            org.example.application.services.payment.TripUnlockService tripUnlockService) {
         return new TripController(
                 createTripUseCase,
                 updateTripUseCase,
@@ -164,7 +165,8 @@ public class ApplicationConfig {
                 tokenService,
                 tripCollaborationService,
                 agencyMemberRepository,
-                auditService);
+                auditService,
+                tripUnlockService);
     }
 
     @Produces

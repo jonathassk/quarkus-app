@@ -107,6 +107,16 @@ public class Trip extends PanacheEntityBase {
     @Column(name = "last_contact_at")
     private Instant lastContactAt;
 
+    /** Destinatário da proposta pública — permite reenvio sem redigitar o contato. */
+    @Column(name = "proposal_client_email", length = 255)
+    private String proposalClientEmail;
+
+    @Column(name = "proposal_client_name", length = 255)
+    private String proposalClientName;
+
+    @Column(name = "proposal_sent_at")
+    private Instant proposalSentAt;
+
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<TripProposalTier> proposalTiers = new ArrayList<>();
@@ -131,6 +141,12 @@ public class Trip extends PanacheEntityBase {
     }
 
     private void syncStatusFromDates() {
-        this.status = TripStatus.fromDates(startDate, endDate, LocalDate.now());
+        // Com datas fixas, o calendário manda. Sem datas (viagem relativa),
+        // preserva status manual (ex.: PLANNING → ONGOING via PATCH).
+        if (startDate != null && endDate != null) {
+            this.status = TripStatus.fromDates(startDate, endDate, LocalDate.now());
+        } else if (this.status == null) {
+            this.status = TripStatus.PLANNING;
+        }
     }
 } 

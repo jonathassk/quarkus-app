@@ -70,6 +70,12 @@ public class MagicLinkService {
     @ConfigProperty(name = "mp.jwt.sign.key.location", defaultValue = "privateKey.pem")
     String privateKeyLocation;
 
+    @Inject
+    org.example.infrastructure.email.EmailWorkerInvoker emailWorkerInvoker;
+
+    @ConfigProperty(name = "app.public-url")
+    String appPublicUrl;
+
     /**
      * Gera um JWT de Magic Link para um e-mail vinculado a uma viagem.
      *
@@ -98,6 +104,53 @@ public class MagicLinkService {
 
         log.info("Magic link token generated for email={} tripId={}", normalizedEmail, tripId);
         return token;
+    }
+
+    /**
+     * Envia o link de acesso por e-mail através do {@code email-worker}.
+     *
+     * <p>Falha de envio não interrompe o fluxo: a resposta ao cliente é sempre genérica
+     * para não permitir enumeração de e-mails.
+     *
+     * @return {@code true} se o e-mail foi enfileirado.
+     */
+    public boolean sendMagicLinkEmail(String email, UUID tripId, String token) {
+        String normalizedEmail = normalize(email);
+        Trip trip = tripRepository.findById(tripId);
+        String tripName = trip != null && trip.getName() != null ? trip.getName() : "sua viagem";
+        String link = magicLinkUrl(token);
+
+        String subject = "Seu link de acesso — " + tripName;
+        String textBody = """
+                Olá!
+
+                Use o link abaixo para acessar %s. Ele expira em 15 minutos e só pode ser usado por você.
+
+                %s
+
+                Se você não pediu este acesso, ignore este e-mail.
+                """.formatted(tripName, link);
+        String htmlBody = """
+                <p>Olá!</p>
+                <p>Use o botão abaixo para acessar <strong>%s</strong>. O link expira em 15 minutos.</p>
+                <p><a href="%s" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:600">Acessar viagem</a></p>
+                <p style="color:#6b7280;font-size:12px">Se você não pediu este acesso, ignore este e-mail.</p>
+                """.formatted(escapeHtml(tripName), link);
+
+        return emailWorkerInvoker.enqueueDirectEmail(normalizedEmail, subject, textBody, htmlBody);
+    }
+
+    private String magicLinkUrl(String token) {
+        String base = appPublicUrl != null ? appPublicUrl.trim() : "";
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/auth/magic-link?token="
+                + java.net.URLEncoder.encode(token, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static String escapeHtml(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /**

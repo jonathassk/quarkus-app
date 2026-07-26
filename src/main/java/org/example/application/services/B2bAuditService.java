@@ -74,6 +74,43 @@ public class B2bAuditService {
             String newSnapshot,
             String description,
             String ipAddress) {
+        record(trip, actorUserId, null, action, entityType, entityId,
+                previousSnapshot, newSnapshot, description, ipAddress);
+    }
+
+    /**
+     * Registra uma ação executada por alguém sem sessão na plataforma — hoje, o cliente
+     * agindo pelo link público da proposta.
+     *
+     * @param actorLabel Identificação legível do ator (ex.: {@code "Cliente (link público)"}).
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void recordExternalActor(
+            Trip trip,
+            String actorLabel,
+            B2bTripLogAction action,
+            String entityType,
+            UUID entityId,
+            String previousSnapshot,
+            String newSnapshot,
+            String description,
+            String ipAddress) {
+        record(trip, null, actorLabel, action, entityType, entityId,
+                previousSnapshot, newSnapshot, description, ipAddress);
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void record(
+            Trip trip,
+            UUID actorUserId,
+            String actorLabel,
+            B2bTripLogAction action,
+            String entityType,
+            UUID entityId,
+            String previousSnapshot,
+            String newSnapshot,
+            String description,
+            String ipAddress) {
 
         if (trip == null || trip.getAgency() == null) {
             // Viagem B2C — auditoria B2B não aplicável
@@ -81,9 +118,13 @@ public class B2bAuditService {
         }
 
         try {
-            User actor = userRepository.findById(actorUserId);
-            if (actor == null) {
+            User actor = actorUserId != null ? userRepository.findById(actorUserId) : null;
+            if (actorUserId != null && actor == null) {
                 log.warn("B2B audit: actor userId={} not found, skipping log for tripId={}", actorUserId, trip.id);
+                return;
+            }
+            if (actor == null && (actorLabel == null || actorLabel.isBlank())) {
+                log.warn("B2B audit: no actor and no actorLabel, skipping log for tripId={}", trip.id);
                 return;
             }
 
@@ -93,6 +134,7 @@ public class B2bAuditService {
                     .agency(agency)
                     .trip(trip)
                     .actorUser(actor)
+                    .actorLabel(actorLabel != null ? truncate(actorLabel, 255) : null)
                     .action(action)
                     .entityType(entityType)
                     .entityId(entityId)

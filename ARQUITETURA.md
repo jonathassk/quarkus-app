@@ -21,11 +21,17 @@ O **Baggagi** permite que usuários:
 
 - Autentiquem via **Neon Auth** (Google OAuth, e-mail, etc.) integrado ao Postgres Neon.
 - Criem e editem **viagens** com orçamento, datas, imagem de capa e visibilidade.
-- Organizem o roteiro em **segmentos** (cidades/períodos), com **atividades** e **refeições** (horários, endereço, coordenadas, custos).
-- Compartilhem viagens com outros usuários via **`trip_users`** e níveis de permissão (`OWNER`, `ADMIN`, etc.).
-- (Frontend) Podem usar um serviço separado de **geração de roteiro por IA** via Lambda Function URL.
+- Organizem o roteiro em **segmentos** (cidades/períodos), com **atividades** e **refeições**.
+- Compartilhem viagens (`trip_users`: `OWNER`, `ADMIN`, `VIEWER`), checklist e documentos (R2).
+- Usem **chat** (trip / DM / evento), **eventos** com RSVP e **feed social** (DynamoDB).
+- Assinem planos via **Stripe**; preferências de e-mail/viagem/documentos com validade.
+- Em **B2B**: agências com branding, propostas interativas (tiers + link público), guests via Magic Link.
 
-Este repositório (`quarkus-app`) é o **backend principal** (API REST + persistência PostgreSQL).
+O frontend pode usar uma **Lambda de planejamento por IA** (Function URL) — fora deste repo.
+
+Este repositório (`quarkus-app`) é o **backend principal** (API REST + persistência PostgreSQL + orquestração de integrações).
+
+> **Referência de domínio e APIs:** [docs/BACKEND.md](docs/BACKEND.md) — prevalece sobre trechos legados deste arquivo (PKs UUID, lista completa de controllers).
 
 ---
 
@@ -47,37 +53,44 @@ flowchart TB
         CF_CDN[CloudFront - origem do site]
     end
 
-    subgraph aws_api [AWS sa-east-1 - API principal]
+    subgraph aws_api [AWS - API principal]
         APIGW[API Gateway HTTP API]
-        LambdaAPI[Lambda Quarkus<br/>baggagi-back]
+        LambdaAPI[Lambda Quarkus baggagi-back]
+        EmailWorker[Lambda email-worker Go]
+        WSBroadcast[Lambda chat broadcast]
     end
 
     subgraph neon_auth [Neon Auth]
-        AuthAPI[Neon Auth API<br/>Better Auth]
+        AuthAPI[Neon Auth API]
         AuthSchema[(neon_auth schema)]
     end
 
     subgraph aws_ai [AWS - Planejamento IA]
-        LambdaPlan[Lambda Function URL<br/>roteiro / stream]
+        LambdaPlan[Lambda Function URL roteiro]
     end
 
     subgraph data [Dados]
         Neon[(Neon PostgreSQL)]
+        Dynamo[(DynamoDB posts_network)]
+        R2[(Cloudflare R2)]
     end
 
     Browser --> CF_WWW
     CF_WWW --> CF_CDN
     CF_CDN --> Next
-    Next -->|HTTPS + Bearer JWT| CF_API
+    Next -->|HTTPS + X-Baggagi-Authorization| CF_API
     CF_API -->|DNS only recomendado| APIGW
     APIGW --> LambdaAPI
     LambdaAPI --> Neon
+    LambdaAPI --> Dynamo
+    LambdaAPI --> R2
+    LambdaAPI -.-> WSBroadcast
+    EmailWorker --> Neon
 
     Browser --> AuthAPI
     AuthAPI --> AuthSchema
     AuthSchema --> Neon
     Next -->|session-sync| APIGW
-
     Next -.->|opcional| LambdaPlan
 ```
 
@@ -172,7 +185,7 @@ sam deploy -t target/sam.jvm.yaml --parameter-overrides DbPassword="SENHA_NEON"
 | MongoDB | Configurado (dev) | `quarkus.mongodb.enabled=false` |
 | SQL log | `true` | `false` |
 
-Migrações Flyway: `V1__...`, `V7__neon_auth_user_id.sql` (coluna `auth_user_id`), etc.
+Migrações Flyway: `V1` baseline UUID … `V6` B2B/propostas (ver `src/main/resources/db/migration/`). Em prod, preferir `./scripts/db-migrate.sh` antes do deploy.
 
 ---
 
@@ -190,8 +203,9 @@ Migrações Flyway: `V1__...`, `V7__neon_auth_user_id.sql` (coluna `auth_user_id
 | Campo | Descrição |
 |-------|-----------|
 | `users.auth_user_id` | UUID do Neon Auth (`sub` do JWT) |
-| `users.id` | PK numérica da aplicação (viagens, permissões) |
+| `users.id` | PK **UUID v7** da aplicação (viagens, permissões, chat) |
 | `users.provider` | `google`, `neon`, etc. |
+| `users.user_type` | `GUEST` \| `FREE` \| `PREMIUM` |
 
 `UserSyncService` resolve por `auth_user_id`, depois por e-mail (mesma conta Google migrada), depois cria usuário.
 
@@ -208,58 +222,78 @@ Migrações Flyway: `V1__...`, `V7__neon_auth_user_id.sql` (coluna `auth_user_id
 |----------|------|-----------|
 | `POST /api/v1/auth/session-sync` | Bearer Neon Auth JWT | Cria/vincula usuário em `users` |
 | `GET /api/v1/auth/me` | Bearer JWT | Perfil do usuário autenticado |
+| `POST /api/v1/auth/magic-link/request` | — | Guest B2B: solicita Magic Link |
+| `POST /api/v1/auth/magic-link/verify` | — | Troca token curto por sessão |
 | `POST /api/v1/users/login` | Não | Legado e-mail/senha (BCrypt + JWT local RS256) |
 | `POST /api/v1/users/create-user` | Não | Registro legado |
+
+Header preferencial nas rotas protegidas: **`X-Baggagi-Authorization: Bearer <jwt>`** (contorna JWT authorizer do API Gateway que não valida EdDSA).
 
 ---
 
 ## 6. Arquitetura de software (backend Java)
 
-Padrão em camadas (clean-ish):
+Padrão em camadas:
 
 ```text
 org.example
-├── controller/          # REST (JAX-RS)
+├── controller/          # REST (JAX-RS) — /api/v1
 ├── application/
-│   ├── dto/             # Request/Response
-│   ├── usecases/        # Casos de uso
-│   └── services/        # Serviços de domínio/aplicação
+│   ├── dto/
+│   ├── usecases/        # Create/Update Trip, user legado
+│   └── services/        # chat/, event/, agency/, proposal/, …
 ├── domain/
-│   ├── entity/          # JPA (Trip, User, …)
+│   ├── entity/          # JPA (+ chat/, event/)
 │   ├── repository/      # Panache
 │   └── enums/
-├── infrastructure/
-│   ├── config/          # CDI Producers (ApplicationConfig)
-│   └── mapper/          # ModelMapper / TripMapper
-└── utils/               # Validadores
+├── infrastructure/      # Neon Auth, R2, Dynamo, filters, SnapStart
+└── utils/
 ```
 
-### 6.1 Controllers
+Sidecar: `services/email-worker/` (Go + SES).
+
+### 6.1 Controllers (mapa)
 
 | Classe | Base path | Responsabilidade |
 |--------|-----------|------------------|
-| `TripController` | `/api/v1/trips` | CRUD viagens, listagem, membros |
-| `UserController` | `/api/v1/users` | Login/registro legado |
-| `AuthController` | `/api/v1/auth` | `/me`, `/session-sync` |
+| `AuthController` | `/api/v1/auth` | session-sync, me, magic-link |
+| `UserController` | `/api/v1/users` | login/registro, perfil, avatar |
+| `TripController` | `/api/v1/trips` | CRUD viagens |
+| `TripShareController` / `TripChecklistController` / `TripDocumentController` / `TripChatController` | `/api/v1/trips` | colaboração, checklist, R2, chat |
+| `TripProposalController` | `/api/v1/trips` | pricing, tiers, envio de proposta |
+| `PublicProposalController` | `/api/v1/public/proposals` | proposta pública |
+| `AgencyController` | `/api/v1/agency` | B2B branding, team, pipeline |
+| `ChatController` | `/api/v1/chat` | inbox, DMs, ws-token |
+| `EventController` / `EventPostController` / `EventChatController` | `/api/v1/events` | eventos |
+| `PostController` | `/api/v1/posts` | feed Dynamo |
+| `PaymentController` | `/api/v1/payments` | Stripe |
 
-### 6.2 Casos de uso principais
+Lista completa e contratos: **[docs/BACKEND.md](docs/BACKEND.md)**.
 
-| Use case | Função |
-|----------|--------|
-| `CreateTripUseCaseimpl` | Cria viagem + segmentos + meals + activities + trip_users |
-| `UpdateTripUseCaseImpl` | Atualiza viagem, segmentos, usuários |
-| `LoginUserUseCaseImpl` / `CreateUserUseCaseImpl` | Fluxo legado |
-| `UserSyncService` | JIT provisioning Neon Auth → `users` |
+### 6.2 Casos de uso / serviços principais
+
+| Componente | Função |
+|------------|--------|
+| `CreateTripUseCase` / `UpdateTripUseCase` | Aggregate de viagem (segmentos, meals, activities) |
+| `UserSyncService` / `AuthSessionService` | JIT Neon Auth → `users` |
+| `TripCollaborationService` | Share / permissões |
+| `MessageService` / `DirectChatService` / `ChatBroadcastService` | Chat + fan-out WS |
+| `EventService` / `EventPostService` | Eventos |
+| `AgencyService` / `ProposalService` | B2B |
+| `ObjectStorageService` | R2 |
+| `PostService` | DynamoDB feed |
 
 ### 6.3 Logs
 
-Falhas registradas com **WARN** (regra de negócio, 401, 403, 404) e **ERROR** (exceções, banco, token). Sem logs INFO em fluxos de sucesso nos controllers principais.
+Falhas com **WARN** (negócio, 401/403/404) e **ERROR** (exceções, banco, token). Evitar INFO em fluxos de sucesso nos controllers principais.
 
 ---
 
 ## 7. Modelo de dados (PostgreSQL / Neon)
 
-### 7.1 Diagrama entidade-relacionamento
+> PKs de aplicação são **UUID v7** (não `BIGINT`). Diagrama simplificado do núcleo de viagem; entidades de chat, eventos, B2B e Dynamo posts: [docs/BACKEND.md](docs/BACKEND.md).
+
+### 7.1 Diagrama entidade-relacionamento (núcleo)
 
 ```mermaid
 erDiagram
@@ -271,20 +305,19 @@ erDiagram
     trip_segments ||--o{ meals : has
 
     users {
-        bigint id PK
+        uuid id PK
         string email UK
         string auth_user_id UK
         string username UK
         string password_hash
         string full_name
         string provider
-        string role
-        boolean email_verified
+        string user_type
     }
 
     trips {
-        bigint id PK
-        bigint created_by FK
+        uuid id PK
+        uuid created_by FK
         string name
         decimal budget_total
         date start_date
@@ -292,18 +325,20 @@ erDiagram
         string cover_image_url
         string visibility
         string trip_status
+        string proposal_status
+        string share_code
     }
 
     trip_users {
-        bigint id PK
-        bigint user_id FK
-        bigint trip_id FK
+        uuid id PK
+        uuid user_id FK
+        uuid trip_id FK
         string permission_level
     }
 
     trip_segments {
-        bigint id PK
-        bigint trip_id FK
+        uuid id PK
+        uuid trip_id FK
         string city_id
         date arrival_date
         date departure_date
@@ -312,8 +347,8 @@ erDiagram
     }
 
     activities {
-        bigint id PK
-        bigint segment_id FK
+        uuid id PK
+        uuid segment_id FK
         string name
         string activity_type
         timestamptz start_time
@@ -326,8 +361,8 @@ erDiagram
     }
 
     meals {
-        bigint id PK
-        bigint segment_id FK
+        uuid id PK
+        uuid segment_id FK
         string name
         string meal_type
         string restaurant_name
@@ -353,26 +388,29 @@ jdbc:postgresql://ep-steep-night-ai1jrfuk-pooler.c-4.us-east-1.aws.neon.tech:543
 
 ---
 
-## 8. API REST — referência de endpoints
+## 8. API REST — referência
 
-Base: `https://api.baggagi.com`
+Base: `https://api.baggagi.com` — prefixo `/api/v1`.
 
-### 8.1 Viagens (`TripController`)
+Mapa completo de controllers e contratos: **[docs/BACKEND.md §6](docs/BACKEND.md)** e OpenAPI em `/q/openapi`.
 
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| `GET` | `/api/v1/trips` | Bearer | Lista viagens do usuário (criador ou `trip_users`) |
-| `POST` | `/api/v1/trips/create-trip` | Não* | Cria viagem (body `TripRequestDTO`) |
-| `GET` | `/api/v1/trips/{tripId}` | Bearer + membro | Detalhe da viagem |
-| `PUT` | `/api/v1/trips/{tripId}/update-trip` | Bearer + membro | Atualização completa |
-| `PATCH` | `/api/v1/trips/{tripId}/update-name-description` | Bearer + membro | Só nome/descrição |
-| `PATCH` | `/api/v1/trips/{tripId}/update-users-trip` | Bearer + membro | Atualiza membros |
-| `DELETE` | `/api/v1/trips/{tripId}` | Bearer (criador) | Remove viagem |
-| `GET` | `/api/v1/trips/test` | Não | Health simples (`teste`) |
+### 8.1 Viagens (resumo)
 
-\* `create-trip` usa JWT para definir `createdBy` automaticamente (body ignorado para autorização).
+| Método | Path | Descrição |
+|--------|------|-----------|
+| `GET` | `/trips` | Lista viagens do usuário |
+| `POST` | `/trips/create-trip` | Cria viagem |
+| `GET` | `/trips/{tripId}` | Detalhe |
+| `PUT` | `/trips/{tripId}/update-trip` | Update completo |
+| `PATCH` | `/trips/{tripId}` | Patch parcial |
+| `DELETE` | `/trips/{tripId}` | Remove |
+| `POST/PATCH/DELETE` | `/trips/{tripId}/share…` | Colaboração |
+| CRUD | `/trips/{tripId}/checklist…` | Checklist |
+| GET/POST… | `/trips/{tripId}/documents…` | Documentos R2 |
 
-### 8.2 Payload de criação/atualização de viagem (`TripRequestDTO`)
+Auth: Bearer / `X-Baggagi-Authorization` + membro da viagem quando aplicável.
+
+### 8.2 Payload de criação/atualização (`TripRequestDTO`)
 
 Estrutura enviada pelo frontend ao salvar planejamento:
 
@@ -384,9 +422,9 @@ Estrutura enviada pelo frontend ao salvar planejamento:
   "startDate": "2026-04-24",
   "endDate": "2026-04-26",
   "coverImageUrl": "https://...",
-  "createdBy": 123,
+  "createdBy": "550e8400-e29b-41d4-a716-446655440000",
   "visibility": "private",
-  "users": [{ "userId": 123, "permissionLevel": "OWNER" }],
+  "users": [{ "userId": "550e8400-e29b-41d4-a716-446655440000", "permissionLevel": "OWNER" }],
   "segments": [{
     "cityId": "London, United Kingdom",
     "arrivalDate": "2026-04-24",
@@ -436,18 +474,17 @@ Trate como **microsserviço auxiliar** acoplado apenas pelo contrato JSON do fro
 
 ---
 
-## 10. O que foi criado / evoluído neste repositório
-
-Resumo das entregas recentes alinhadas ao produto em produção:
+## 10. Evolução recente neste repositório
 
 | Área | Itens |
 |------|--------|
-| **Neon Auth** | `NeonAuthJwtVerifier`, `User.authUserId`, `UserSyncService`, JWT EdDSA |
-| **Viagem** | Payload rico (segments, activities, meals, dailyCost, coordenadas, horários), `TripStatus`, validação |
-| **Infra** | Deploy Lambda SAM, SnapStart, CORS produção, Flyway V1, perfil `lambda` |
-| **Segurança** | JWT Neon Auth + session-sync |
-| **Ops** | `DEPLOY.md`, scripts SQL Neon, logs WARN/ERROR |
-| **Docs** | `ARQUITETURA.md` (este arquivo), `.env.example`, exemplos JSON/Java |
+| **Neon Auth** | `NeonAuthJwtVerifier`, `auth_user_id`, JIT, `X-Baggagi-Authorization` |
+| **Viagem** | Aggregate rico, checklist, documentos R2, share, `TripStatus` |
+| **Chat / Eventos** | Postgres + broadcast WS; feature flags |
+| **B2B** | Agency branding, propostas/tiers, Magic Link, auditoria |
+| **Social / Pagamentos** | DynamoDB posts, Stripe |
+| **E-mail** | Preferências + `email-worker` (SES) |
+| **Infra** | Lambda SAM, SnapStart, Flyway V1–V6, dual JDBC pooler/direct |
 
 Arquivos que **não** devem ir para o Git: `.m2/`, `.env`, `privateKey.pem`, `samconfig.toml`, `function.zip` (ver `.gitignore`).
 
@@ -502,7 +539,7 @@ sequenceDiagram
 
     F->>API: POST /auth/session-sync Bearer JWT
     API->>DB: users JIT por auth_user_id ou email
-    API-->>F: id numérico da app
+    API-->>F: user app (UUID)
 
     F->>API: GET /trips Bearer JWT
     API->>API: NeonAuthJwtVerifier + UserSyncService
@@ -516,7 +553,7 @@ sequenceDiagram
 
 - [ ] Neon Auth habilitado no projeto; Google OAuth configurado
 - [ ] `NEON_AUTH_BASE_URL` na Lambda API
-- [ ] Colunas `auth_user_id` / `role` (Flyway V7 ou script SQL)
+- [ ] Colunas `auth_user_id` / schema UUID (Flyway V1+)
 - [ ] `QUARKUS_DATASOURCE_PASSWORD` correta na Lambda API
 - [ ] CORS com `https://baggagi.com` e `https://www.baggagi.com`
 - [ ] DNS `api` em **DNS only** (recomendado)
@@ -541,5 +578,6 @@ sequenceDiagram
 
 ## 15. Contato com o código
 
-Para detalhes de cada classe, DTO e endpoint legado, use [DOCUMENTACAO.md](DOCUMENTACAO.md).  
-Para operação e deploy, use [DEPLOY.md](DEPLOY.md).
+- Domínio, APIs e decisões: **[docs/BACKEND.md](docs/BACKEND.md)** / **[README.md](README.md)**
+- Deploy e operação: **[DEPLOY.md](DEPLOY.md)**
+- Notas antigas de DTOs: [DOCUMENTACAO.md](DOCUMENTACAO.md) (pode estar desatualizado)
