@@ -222,6 +222,46 @@ public class UserController {
         return Response.ok(results).build();
     }
 
+    /**
+     * Perfil público de outro usuário (feed social / página /social/{id}).
+     * Não expõe telefone, data de nascimento nem demais dados sensíveis do perfil autenticado.
+     */
+    @GET
+    @Path("/{id}")
+    @Operation(
+        summary = "Obter perfil público por ID",
+        description = "Retorna dados públicos de um usuário para visualização no feed social."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Perfil encontrado"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "404", description = "Usuário não encontrado")
+    })
+    public Response getUserById(
+            @PathParam("id") UUID id,
+            @Context HttpHeaders headers) {
+        Optional<UUID> actorId = resolveAuthenticatedUserId(headers);
+        if (actorId.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Invalid or expired token")
+                    .build();
+        }
+        User user = userRepository.findById(id);
+        if (user == null || user.getDeletedAt() != null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("code", "NOT_FOUND", "message", "User not found"))
+                    .build();
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("id", user.id);
+        body.put("email", user.getEmail() != null ? user.getEmail() : "");
+        body.put("fullName", user.getFullName() != null ? user.getFullName() : "");
+        body.put("username", user.getUsername() != null ? user.getUsername() : "");
+        body.put("avatar", user.getProfilePictureUrl());
+        body.put("bio", user.getBio());
+        return Response.ok(body).build();
+    }
+
     private UserSearchResultDTO toSearchResult(User user) {
         return UserSearchResultDTO.builder()
                 .id(user.id)

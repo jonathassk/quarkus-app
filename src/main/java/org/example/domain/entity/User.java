@@ -61,7 +61,7 @@ public class User extends PanacheEntityBase {
     @Column(name = "provider_id", length = 255)
     private String providerId;
 
-    @Column(name = "profile_picture_url", length = 255)
+    @Column(name = "profile_picture_url", length = 1024)
     private String profilePictureUrl;
 
     @Column(name = "date_of_birth")
@@ -129,6 +129,13 @@ public class User extends PanacheEntityBase {
     @Column(name = "user_type", length = 20, nullable = false)
     @Builder.Default
     private UserType userType = UserType.FREE;
+
+    /**
+     * Quando o usuário iniciou o trial Stripe de 5 dias.
+     * {@code null} = ainda elegível a um trial (B2C ou B2B).
+     */
+    @Column(name = "trial_used_at")
+    private Instant trialUsedAt;
 
     @PrePersist
     protected void onCreate() {

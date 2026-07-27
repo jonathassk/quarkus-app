@@ -168,7 +168,10 @@ public class UserSyncService {
             user.setEmailVerified(true);
         }
 
-        if (name != null && !name.isBlank()) {
+        // Nunca sobrescrever nome/foto já definidos pelo usuário (ou por sync anterior).
+        // O session-sync roda em todo foco/navegação; se sempre aplicarmos claims do
+        // Google/Neon, edições em /profile são revertidas ao voltar na página.
+        if (isBlank(user.getFullName()) && name != null && !name.isBlank()) {
             user.setFullName(name.trim());
         }
         if (shouldUpdateProfilePicture(user.getProfilePictureUrl(), pictureUrl)) {
@@ -261,14 +264,11 @@ public class UserSyncService {
         if (newPic == null || newPic.isBlank()) {
             return false;
         }
-        if (currentPic == null || currentPic.isBlank()) {
-            return true;
-        }
-        // Se a foto atual do usuário contém "avatars/" (foto enviada pelo próprio usuário no Baggagi),
-        // não devemos sobrescrever com a foto do Google/redes sociais.
-        if (currentPic.contains("avatars/")) {
-            return false;
-        }
-        return true;
+        // Só preenche foto ausente. Nunca substitui foto já salva (upload próprio ou OAuth).
+        return isBlank(currentPic);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

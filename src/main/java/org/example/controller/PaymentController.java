@@ -45,11 +45,14 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.net.URI;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.example.application.services.entitlement.EntitlementService;
 
 @Slf4j
 @Tag(name = "Payments", description = "Integração com Stripe para pagamentos unitários de viagens e assinaturas de planos")
@@ -102,6 +105,9 @@ public class PaymentController {
 
     @ConfigProperty(name = "stripe.price.anual-agent-team")
     Optional<String> priceAnualAgentTeam;
+
+    @ConfigProperty(name = "stripe.trial.period-days", defaultValue = "5")
+    int trialPeriodDays;
 
     @ConfigProperty(name = "quarkus.http.cors.origins", defaultValue = "http://localhost:3000")
     String corsOriginsConfig;
@@ -230,6 +236,23 @@ public class PaymentController {
             return Response.status(Response.Status.BAD_REQUEST).entity("paymentType and targetId are required").build();
         }
 
+        boolean withTrial = Boolean.TRUE.equals(request.getTrial());
+        if (withTrial && "UNITARIO".equals(request.getPaymentType())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Trial is only available for subscription plans")
+                    .build();
+        }
+        if (withTrial && !isTrialAllowedPaymentType(request.getPaymentType())) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Trial is only available for monthly entry plans (Premium or Essencial)")
+                    .build();
+        }
+
+        User authUser = userRepository.findById(userIdOpt.get());
+        if (authUser == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).entity("Invalid or expired token").build();
+        }
+
         // 1. Validar permissão dependendo do tipo
         if ("UNITARIO".equals(request.getPaymentType())) {
             Trip trip = tripRepository.findById(request.getTargetId());
@@ -244,6 +267,15 @@ public class PaymentController {
             WorkspaceMember member = WorkspaceMember.find("workspace.id = ?1 and user.id = ?2", request.getTargetId(), userIdOpt.get()).firstResult();
             if (member == null) {
                 return Response.status(Response.Status.FORBIDDEN).entity("You are not a member of this workspace").build();
+            }
+            if (withTrial) {
+                Workspace workspace = member.getWorkspace();
+                String planType = workspace != null ? workspace.getPlanType() : "FREE";
+                if (!EntitlementService.isTrialEligible(authUser, planType)) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity("Trial already used or an active plan is in effect")
+                            .build();
+                }
             }
         }
 
@@ -289,18 +321,25 @@ public class PaymentController {
                 );
 
                 // Copiar metadados para a assinatura criada pelo Checkout
-                paramsBuilder.setSubscriptionData(
-                        SessionCreateParams.SubscriptionData.builder()
-                                .putMetadata("targetId", request.getTargetId().toString())
-                                .putMetadata("paymentType", request.getPaymentType())
-                                .build()
-                );
+                SessionCreateParams.SubscriptionData.Builder subData = SessionCreateParams.SubscriptionData.builder()
+                        .putMetadata("targetId", request.getTargetId().toString())
+                        .putMetadata("paymentType", request.getPaymentType())
+                        .putMetadata("userId", userIdOpt.get().toString());
+                if (withTrial) {
+                    long days = Math.max(1L, trialPeriodDays);
+                    subData.setTrialPeriodDays(days);
+                    subData.putMetadata("trial", "true");
+                }
+                paramsBuilder.setSubscriptionData(subData.build());
             }
 
             // Metadados na sessão de checkout
             paramsBuilder.putMetadata("targetId", request.getTargetId().toString());
             paramsBuilder.putMetadata("paymentType", request.getPaymentType());
             paramsBuilder.putMetadata("userId", userIdOpt.get().toString());
+            if (withTrial) {
+                paramsBuilder.putMetadata("trial", "true");
+            }
 
             Session session = Session.create(paramsBuilder.build());
 
@@ -362,10 +401,18 @@ public class PaymentController {
                         String paymentType = session.getMetadata().get("paymentType");
                         String subscriptionId = session.getSubscription();
                         String tripPaymentIdStr = session.getMetadata().get("tripPaymentId");
+                        boolean isTrial = "true".equalsIgnoreCase(session.getMetadata().get("trial"));
                         if (targetIdStr != null && paymentType != null) {
                             processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId,
-                                    fulfillmentOf(session), tripPaymentIdStr);
+                                    fulfillmentOf(session), tripPaymentIdStr, isTrial);
                         }
+                    }
+                    break;
+
+                case "customer.subscription.updated":
+                    Subscription subUpdated = (Subscription) event.getDataObjectDeserializer().getObject().orElse(null);
+                    if (subUpdated != null) {
+                        handleSubscriptionStatusChange(subUpdated);
                     }
                     break;
 
@@ -376,7 +423,9 @@ public class PaymentController {
                         String targetIdStr = sub.getMetadata().get("targetId");
                         String paymentType = sub.getMetadata().get("paymentType");
                         if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, sub.getId());
+                            // Renovações pós-trial não devem re-marcar trial; só ativam o plano.
+                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, sub.getId(),
+                                    null, null, false);
                         }
                     }
                     break;
@@ -431,25 +480,31 @@ public class PaymentController {
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType) {
-        processSuccessfulPayment(targetId, paymentType, null, null, null);
+        processSuccessfulPayment(targetId, paymentType, null, null, null, false);
     }
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId) {
-        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, null, null);
+        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, null, null, false);
     }
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId,
                                          CheckoutFulfillment fulfillment) {
-        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, fulfillment, null);
+        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, fulfillment, null, false);
     }
 
     @Transactional
     public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId,
                                          CheckoutFulfillment fulfillment, String tripPaymentIdStr) {
-        log.info("Processing successful payment: targetId={}, paymentType={}, sub={}",
-                targetId, paymentType, stripeSubscriptionId);
+        processSuccessfulPayment(targetId, paymentType, stripeSubscriptionId, fulfillment, tripPaymentIdStr, false);
+    }
+
+    @Transactional
+    public void processSuccessfulPayment(UUID targetId, String paymentType, String stripeSubscriptionId,
+                                         CheckoutFulfillment fulfillment, String tripPaymentIdStr, boolean markTrialUsed) {
+        log.info("Processing successful payment: targetId={}, paymentType={}, sub={}, trial={}",
+                targetId, paymentType, stripeSubscriptionId, markTrialUsed);
         if (ProposalPaymentService.PAYMENT_TYPE_PROPOSAL.equals(paymentType)) {
             if (tripPaymentIdStr == null || tripPaymentIdStr.isBlank()) {
                 log.warn("PROPOSAL payment without tripPaymentId metadata targetId={}", targetId);
@@ -468,6 +523,9 @@ public class PaymentController {
                 workspace.setPlanType("B2C_PREMIUM");
                 workspace.persist();
                 upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
+                if (markTrialUsed) {
+                    markTrialUsedForWorkspace(workspace, fulfillment != null ? fulfillment.userId() : null);
+                }
                 log.info("Workspace {} updated to B2C_PREMIUM", targetId);
             }
         } else if (isAgencyPaymentType(paymentType)) {
@@ -478,6 +536,9 @@ public class PaymentController {
                 workspace.persist();
                 upgradeWorkspaceMembersUserType(targetId, UserType.PREMIUM);
                 activateAgencyForWorkspaceOwner(workspace, stripeSubscriptionId, agencyPlan);
+                if (markTrialUsed) {
+                    markTrialUsedForWorkspace(workspace, fulfillment != null ? fulfillment.userId() : null);
+                }
                 log.info("Workspace {} updated to {}", targetId, agencyPlan);
             }
         } else if ("UNITARIO".equals(paymentType)) {
@@ -487,6 +548,57 @@ public class PaymentController {
                     fulfillment != null ? fulfillment.sessionId() : null,
                     fulfillment != null ? fulfillment.amount() : null,
                     fulfillment != null ? fulfillment.currency() : null);
+        }
+    }
+
+    /**
+     * Mantém o plano alinhado ao status da assinatura Stripe (trialing/active vs cancelado).
+     */
+    @Transactional
+    public void handleSubscriptionStatusChange(Subscription sub) {
+        if (sub == null || sub.getMetadata() == null) {
+            return;
+        }
+        String targetIdStr = sub.getMetadata().get("targetId");
+        String paymentType = sub.getMetadata().get("paymentType");
+        if (targetIdStr == null || targetIdStr.isBlank()) {
+            return;
+        }
+        String status = sub.getStatus() != null ? sub.getStatus().toLowerCase() : "";
+        UUID targetId = UUID.fromString(targetIdStr);
+        if ("active".equals(status) || "trialing".equals(status)) {
+            if (paymentType != null && !paymentType.isBlank()) {
+                boolean markTrial = "trialing".equals(status)
+                        || "true".equalsIgnoreCase(sub.getMetadata().get("trial"));
+                processSuccessfulPayment(targetId, paymentType, sub.getId(), null, null, markTrial);
+            }
+            return;
+        }
+        if ("canceled".equals(status) || "unpaid".equals(status) || "incomplete_expired".equals(status)) {
+            processSubscriptionCancellation(targetId);
+        }
+    }
+
+    private void markTrialUsedForWorkspace(Workspace workspace, UUID checkoutUserId) {
+        User user = null;
+        if (checkoutUserId != null) {
+            user = userRepository.findById(checkoutUserId);
+        }
+        if (user == null && workspace != null) {
+            WorkspaceMember ownerMember = WorkspaceMember
+                    .find("workspace.id = ?1 and role = ?2", workspace.id, org.example.domain.enums.WorkspaceRole.OWNER)
+                    .firstResult();
+            if (ownerMember == null) {
+                ownerMember = WorkspaceMember.find("workspace.id", workspace.id).firstResult();
+            }
+            if (ownerMember != null) {
+                user = ownerMember.getUser();
+            }
+        }
+        if (user != null && user.getTrialUsedAt() == null) {
+            user.setTrialUsedAt(Instant.now());
+            user.persist();
+            log.info("Marked trial_used_at for user {}", user.id);
         }
     }
 
@@ -577,6 +689,11 @@ public class PaymentController {
                 || "ANUAL_TRIP_AGENT".equals(paymentType)
                 || "MENSAL_TRIP_AGENT_TEAM".equals(paymentType)
                 || "ANUAL_TRIP_AGENT_TEAM".equals(paymentType);
+    }
+
+    /** Trial só nos planos mensais de entrada (Premium B2C e Essencial B2B). */
+    private static boolean isTrialAllowedPaymentType(String paymentType) {
+        return "MENSAL".equals(paymentType) || "MENSAL_TRIP_AGENT_STARTER".equals(paymentType);
     }
 
     /** Essencial → B2B_STARTER; Solo → B2B_PRO; Team → B2B_TEAM. */

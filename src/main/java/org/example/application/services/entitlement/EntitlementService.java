@@ -99,7 +99,25 @@ public class EntitlementService {
                 .tripUnlockKinds(unlockKinds)
                 .upgrades(suggestedUpgrades(limits.planType))
                 .aiModelTier(resolveAiModelTier(limits.planType))
+                .trialEligible(isTrialEligible(user, limits.planType))
                 .build();
+    }
+
+    /**
+     * Trial de 5 dias: uma vez por usuário, apenas sem plano pago ativo.
+     */
+    public static boolean isTrialEligible(User user, String planType) {
+        if (user == null || user.getTrialUsedAt() != null) {
+            return false;
+        }
+        if (user.getUserType() == UserType.PREMIUM) {
+            return false;
+        }
+        if (planType == null || planType.isBlank()) {
+            return true;
+        }
+        String p = planType.trim().toUpperCase();
+        return "FREE".equals(p) || "B2B_FREE".equals(p) || "B2B_INACTIVE".equals(p);
     }
 
     /** Flash para FREE; Pro para Premium e B2B pago. */

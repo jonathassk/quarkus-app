@@ -35,6 +35,11 @@ public class EntitlementsDTO {
      * O front deve enviar este valor à Lambda — não escolher o modelo no cliente.
      */
     private String aiModelTier;
+    /**
+     * {@code true} se o usuário ainda pode iniciar o trial de 5 dias
+     * (sem assinatura ativa e sem {@code trial_used_at}).
+     */
+    private boolean trialEligible;
 
     @Data
     @Builder

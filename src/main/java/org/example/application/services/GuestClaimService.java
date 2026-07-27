@@ -83,11 +83,11 @@ public class GuestClaimService {
             guest.setPasswordHash("*EXTERNAL_AUTH*");
         }
 
-        // 4. Atualiza perfil com dados frescos do Neon Auth
+        // 4. Completa perfil só onde ainda estiver vazio (preserva nome/foto já definidos)
         guest.setEmailVerified(true);
         guest.setAccountStatus("active");
 
-        if (name != null && !name.isBlank()) {
+        if (isBlank(guest.getFullName()) && name != null && !name.isBlank()) {
             guest.setFullName(name.trim());
         }
         if (shouldUpdateProfilePicture(guest.getProfilePictureUrl(), pictureUrl)) {
@@ -109,14 +109,10 @@ public class GuestClaimService {
         if (newPic == null || newPic.isBlank()) {
             return false;
         }
-        if (currentPic == null || currentPic.isBlank()) {
-            return true;
-        }
-        // Se a foto atual do usuário contém "avatars/" (foto enviada pelo próprio usuário no Baggagi),
-        // não devemos sobrescrever com a foto do Google/redes sociais.
-        if (currentPic.contains("avatars/")) {
-            return false;
-        }
-        return true;
+        return isBlank(currentPic);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

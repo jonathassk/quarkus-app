@@ -18,4 +18,9 @@ public class PaymentRequestDTO {
     private String successUrl;
     /** Optional; must match an allowed frontend origin (see CORS). */
     private String cancelUrl;
+    /**
+     * Se {@code true}, inicia assinatura com trial Stripe de 5 dias (cartão obrigatório, sem cobrança imediata).
+     * Só permitido em planos mensais de entrada e para contas que ainda não usaram trial.
+     */
+    private Boolean trial;
 }
