@@ -10,6 +10,7 @@ import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
+import com.stripe.param.checkout.SessionRetrieveParams;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
@@ -21,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.dto.payment.request.PaymentRequestDTO;
+import org.example.application.dto.payment.request.ReconcilePaymentRequestDTO;
 import org.example.application.dto.payment.response.PaymentResponseDTO;
 import org.example.application.services.TokenService;
 import org.example.domain.entity.Trip;
@@ -397,15 +399,7 @@ public class PaymentController {
                 case "checkout.session.completed":
                     Session session = (Session) event.getDataObjectDeserializer().getObject().orElse(null);
                     if (session != null) {
-                        String targetIdStr = session.getMetadata().get("targetId");
-                        String paymentType = session.getMetadata().get("paymentType");
-                        String subscriptionId = session.getSubscription();
-                        String tripPaymentIdStr = session.getMetadata().get("tripPaymentId");
-                        boolean isTrial = "true".equalsIgnoreCase(session.getMetadata().get("trial"));
-                        if (targetIdStr != null && paymentType != null) {
-                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId,
-                                    fulfillmentOf(session), tripPaymentIdStr, isTrial);
-                        }
+                        applyCheckoutSession(session);
                     }
                     break;
 
@@ -420,20 +414,16 @@ public class PaymentController {
                     Invoice invoice = (Invoice) event.getDataObjectDeserializer().getObject().orElse(null);
                     if (invoice != null && invoice.getSubscription() != null) {
                         Subscription sub = Subscription.retrieve(invoice.getSubscription());
-                        String targetIdStr = sub.getMetadata().get("targetId");
-                        String paymentType = sub.getMetadata().get("paymentType");
-                        if (targetIdStr != null && paymentType != null) {
-                            // Renovações pós-trial não devem re-marcar trial; só ativam o plano.
-                            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, sub.getId(),
-                                    null, null, false);
-                        }
+                        applySubscriptionPayment(sub, false);
                     }
                     break;
 
                 case "customer.subscription.deleted":
                     Subscription subDeleted = (Subscription) event.getDataObjectDeserializer().getObject().orElse(null);
                     if (subDeleted != null) {
-                        String targetIdStr = subDeleted.getMetadata().get("targetId");
+                        String targetIdStr = subDeleted.getMetadata() != null
+                                ? subDeleted.getMetadata().get("targetId")
+                                : null;
                         if (targetIdStr != null) {
                             processSubscriptionCancellation(UUID.fromString(targetIdStr));
                         }
@@ -453,6 +443,102 @@ public class PaymentController {
         }
 
         return Response.ok().build();
+    }
+
+    /**
+     * Reaplica o plano a partir de uma session/subscription Stripe já paga.
+     * Corrige casos em que o webhook falhou ou o Price ID indica plano de agência
+     * enquanto o metadata (ou UI de billing) apontava Premium B2C.
+     */
+    @POST
+    @Path("/reconcile")
+    @Operation(
+        summary = "Reconciliar plano com Stripe",
+        description = "Lê a Checkout Session ou Subscription no Stripe e reaplica o plano no workspace/agência. "
+                + "O tipo efetivo prioriza o Price ID cobrado (fonte da verdade do produto)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Plano reconciliado"),
+        @APIResponse(responseCode = "400", description = "Parâmetros inválidos ou sessão sem assinatura"),
+        @APIResponse(responseCode = "401", description = "Não autenticado"),
+        @APIResponse(responseCode = "403", description = "Sessão/assinatura de outro usuário"),
+        @APIResponse(responseCode = "503", description = "Stripe não configurado")
+    })
+    public Response reconcilePayment(
+            @RequestBody(required = true) ReconcilePaymentRequestDTO request,
+            @Context HttpHeaders headers) {
+        if (!isStripeConfigured()) {
+            return stripeNotConfiguredResponse();
+        }
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
+        if (userIdOpt.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED).entity("Invalid or expired token").build();
+        }
+        boolean hasSession = request != null && request.getSessionId() != null && !request.getSessionId().isBlank();
+        boolean hasSub = request != null && request.getSubscriptionId() != null && !request.getSubscriptionId().isBlank();
+        if (!hasSession && !hasSub) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("sessionId or subscriptionId is required")
+                    .build();
+        }
+        try {
+            if (hasSession) {
+                Session session = Session.retrieve(
+                        request.getSessionId().trim(),
+                        SessionRetrieveParams.builder().addExpand("subscription").build(),
+                        null);
+                String metaUser = session.getMetadata() != null ? session.getMetadata().get("userId") : null;
+                if (metaUser != null && !metaUser.isBlank() && !userIdOpt.get().toString().equals(metaUser.trim())) {
+                    return Response.status(Response.Status.FORBIDDEN)
+                            .entity("Checkout session does not belong to this user")
+                            .build();
+                }
+                if (!userOwnsCheckoutTarget(userIdOpt.get(), session)) {
+                    return Response.status(Response.Status.FORBIDDEN)
+                            .entity("You do not own the workspace/trip for this checkout")
+                            .build();
+                }
+                applyCheckoutSession(session);
+                String metaPt = session.getMetadata() != null ? session.getMetadata().get("paymentType") : null;
+                String priceId = null;
+                if (session.getSubscription() != null && !session.getSubscription().isBlank()) {
+                    priceId = extractPriceIdFromSubscription(Subscription.retrieve(session.getSubscription()));
+                }
+                String paymentType = resolveEffectivePaymentType(metaPt, priceId);
+                return Response.ok(java.util.Map.of(
+                        "ok", true,
+                        "paymentType", paymentType != null ? paymentType : "",
+                        "planType", paymentTypeToPlanType(paymentType)
+                )).build();
+            }
+
+            Subscription sub = Subscription.retrieve(request.getSubscriptionId().trim());
+            String metaUser = sub.getMetadata() != null ? sub.getMetadata().get("userId") : null;
+            if (metaUser != null && !metaUser.isBlank() && !userIdOpt.get().toString().equals(metaUser.trim())) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity("Subscription does not belong to this user")
+                        .build();
+            }
+            if (!userOwnsSubscriptionTarget(userIdOpt.get(), sub)) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity("You do not own the workspace for this subscription")
+                        .build();
+            }
+            applySubscriptionPayment(sub, isTrialingSubscription(sub));
+            String paymentType = resolveEffectivePaymentType(
+                    sub.getMetadata() != null ? sub.getMetadata().get("paymentType") : null,
+                    extractPriceIdFromSubscription(sub));
+            return Response.ok(java.util.Map.of(
+                    "ok", true,
+                    "paymentType", paymentType != null ? paymentType : "",
+                    "planType", paymentTypeToPlanType(paymentType)
+            )).build();
+        } catch (Exception e) {
+            log.error("Failed to reconcile Stripe payment", e);
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Reconcile failed: " + e.getMessage())
+                    .build();
+        }
     }
 
     /**
@@ -556,27 +642,172 @@ public class PaymentController {
      */
     @Transactional
     public void handleSubscriptionStatusChange(Subscription sub) {
+        if (sub == null) {
+            return;
+        }
+        String status = sub.getStatus() != null ? sub.getStatus().toLowerCase() : "";
+        if ("active".equals(status) || "trialing".equals(status)) {
+            applySubscriptionPayment(sub, isTrialingSubscription(sub));
+            return;
+        }
+        String targetIdStr = sub.getMetadata() != null ? sub.getMetadata().get("targetId") : null;
+        if (targetIdStr == null || targetIdStr.isBlank()) {
+            return;
+        }
+        if ("canceled".equals(status) || "unpaid".equals(status) || "incomplete_expired".equals(status)) {
+            processSubscriptionCancellation(UUID.fromString(targetIdStr));
+        }
+    }
+
+    /** Aplica upgrade a partir de checkout.session.completed (ou reconcile da session). */
+    private void applyCheckoutSession(Session session) throws Exception {
+        if (session == null || session.getMetadata() == null) {
+            return;
+        }
+        String targetIdStr = session.getMetadata().get("targetId");
+        String metaPaymentType = session.getMetadata().get("paymentType");
+        String subscriptionId = session.getSubscription();
+        String tripPaymentIdStr = session.getMetadata().get("tripPaymentId");
+        boolean isTrial = "true".equalsIgnoreCase(session.getMetadata().get("trial"));
+
+        String priceId = null;
+        if (subscriptionId != null && !subscriptionId.isBlank()) {
+            Subscription sub = Subscription.retrieve(subscriptionId);
+            priceId = extractPriceIdFromSubscription(sub);
+            if (!isTrial) {
+                isTrial = isTrialingSubscription(sub)
+                        || "true".equalsIgnoreCase(sub.getMetadata() != null ? sub.getMetadata().get("trial") : null);
+            }
+        }
+        String paymentType = resolveEffectivePaymentType(metaPaymentType, priceId);
+        if (targetIdStr != null && paymentType != null) {
+            processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, subscriptionId,
+                    fulfillmentOf(session), tripPaymentIdStr, isTrial);
+        } else {
+            log.warn("Checkout session {} missing targetId/paymentType (meta={}, price→{})",
+                    session.getId(), metaPaymentType, priceId);
+        }
+    }
+
+    /** Aplica upgrade a partir de invoice.paid / subscription.updated / reconcile. */
+    private void applySubscriptionPayment(Subscription sub, boolean markTrial) {
         if (sub == null || sub.getMetadata() == null) {
             return;
         }
         String targetIdStr = sub.getMetadata().get("targetId");
-        String paymentType = sub.getMetadata().get("paymentType");
+        String metaPaymentType = sub.getMetadata().get("paymentType");
+        String priceId = extractPriceIdFromSubscription(sub);
+        String paymentType = resolveEffectivePaymentType(metaPaymentType, priceId);
+        if (targetIdStr == null || targetIdStr.isBlank() || paymentType == null || paymentType.isBlank()) {
+            log.warn("Subscription {} missing targetId/paymentType (meta={}, price→{})",
+                    sub.getId(), metaPaymentType, priceId);
+            return;
+        }
+        processSuccessfulPayment(UUID.fromString(targetIdStr), paymentType, sub.getId(), null, null, markTrial);
+    }
+
+    private boolean userOwnsCheckoutTarget(UUID userId, Session session) {
+        if (session.getMetadata() == null) {
+            return false;
+        }
+        String targetIdStr = session.getMetadata().get("targetId");
+        String paymentType = session.getMetadata().get("paymentType");
         if (targetIdStr == null || targetIdStr.isBlank()) {
-            return;
+            return false;
         }
-        String status = sub.getStatus() != null ? sub.getStatus().toLowerCase() : "";
-        UUID targetId = UUID.fromString(targetIdStr);
-        if ("active".equals(status) || "trialing".equals(status)) {
-            if (paymentType != null && !paymentType.isBlank()) {
-                boolean markTrial = "trialing".equals(status)
-                        || "true".equalsIgnoreCase(sub.getMetadata().get("trial"));
-                processSuccessfulPayment(targetId, paymentType, sub.getId(), null, null, markTrial);
+        UUID targetId = UUID.fromString(targetIdStr.trim());
+        if ("UNITARIO".equals(paymentType) || ProposalPaymentService.PAYMENT_TYPE_PROPOSAL.equals(paymentType)) {
+            return tripRepository.isUserLinkedToTrip(targetId, userId);
+        }
+        WorkspaceMember member = WorkspaceMember
+                .find("workspace.id = ?1 and user.id = ?2", targetId, userId)
+                .firstResult();
+        return member != null;
+    }
+
+    private boolean userOwnsSubscriptionTarget(UUID userId, Subscription sub) {
+        if (sub.getMetadata() == null) {
+            return false;
+        }
+        String targetIdStr = sub.getMetadata().get("targetId");
+        if (targetIdStr == null || targetIdStr.isBlank()) {
+            return false;
+        }
+        WorkspaceMember member = WorkspaceMember
+                .find("workspace.id = ?1 and user.id = ?2", UUID.fromString(targetIdStr.trim()), userId)
+                .firstResult();
+        return member != null;
+    }
+
+    private static boolean isTrialingSubscription(Subscription sub) {
+        if (sub == null) {
+            return false;
+        }
+        if ("trialing".equalsIgnoreCase(sub.getStatus())) {
+            return true;
+        }
+        return sub.getMetadata() != null && "true".equalsIgnoreCase(sub.getMetadata().get("trial"));
+    }
+
+    /**
+     * Price ID cobrado no Stripe é a fonte da verdade do produto.
+     * Se metadata e price divergirem (ex.: UI de billing mandou {@code ANUAL} mas o price é de agência),
+     * prevalece o price — evita ficar preso em {@code B2C_PREMIUM} sem portal B2B.
+     */
+    private String resolveEffectivePaymentType(String metadataPaymentType, String priceId) {
+        String fromPrice = resolvePaymentTypeFromPriceId(priceId);
+        if (fromPrice != null) {
+            if (metadataPaymentType != null && !metadataPaymentType.isBlank()
+                    && !fromPrice.equals(metadataPaymentType.trim())) {
+                log.warn("paymentType metadata={} disagrees with priceId {} → {}; preferring price",
+                        metadataPaymentType, priceId, fromPrice);
             }
-            return;
+            return fromPrice;
         }
-        if ("canceled".equals(status) || "unpaid".equals(status) || "incomplete_expired".equals(status)) {
-            processSubscriptionCancellation(targetId);
+        return metadataPaymentType != null && !metadataPaymentType.isBlank()
+                ? metadataPaymentType.trim()
+                : null;
+    }
+
+    private String resolvePaymentTypeFromPriceId(String priceId) {
+        if (priceId == null || priceId.isBlank()) {
+            return null;
         }
+        String id = priceId.trim();
+        if (id.equals(priceMensal.orElse(""))) return "MENSAL";
+        if (id.equals(priceAnual.orElse(""))) return "ANUAL";
+        if (id.equals(priceMensalAgentStarter.orElse(""))) return "MENSAL_TRIP_AGENT_STARTER";
+        if (id.equals(priceAnualAgentStarter.orElse(""))) return "ANUAL_TRIP_AGENT_STARTER";
+        if (id.equals(priceMensalAgent.orElse(""))) return "MENSAL_TRIP_AGENT";
+        if (id.equals(priceAnualAgent.orElse(""))) return "ANUAL_TRIP_AGENT";
+        if (id.equals(priceMensalAgentTeam.orElse(""))) return "MENSAL_TRIP_AGENT_TEAM";
+        if (id.equals(priceAnualAgentTeam.orElse(""))) return "ANUAL_TRIP_AGENT_TEAM";
+        return null;
+    }
+
+    private static String extractPriceIdFromSubscription(Subscription sub) {
+        if (sub == null || sub.getItems() == null || sub.getItems().getData() == null
+                || sub.getItems().getData().isEmpty()) {
+            return null;
+        }
+        var item = sub.getItems().getData().get(0);
+        if (item == null || item.getPrice() == null) {
+            return null;
+        }
+        return item.getPrice().getId();
+    }
+
+    private static String paymentTypeToPlanType(String paymentType) {
+        if (paymentType == null || paymentType.isBlank()) {
+            return "";
+        }
+        if ("MENSAL".equals(paymentType) || "ANUAL".equals(paymentType)) {
+            return "B2C_PREMIUM";
+        }
+        if (isAgencyPaymentType(paymentType)) {
+            return resolveAgencyPlanType(paymentType);
+        }
+        return paymentType;
     }
 
     private void markTrialUsedForWorkspace(Workspace workspace, UUID checkoutUserId) {
