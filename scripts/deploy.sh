@@ -3,8 +3,8 @@
 # deploy.sh
 #
 # Deploy seguro da Lambda: aplica as migrations no Neon ANTES de empacotar e
-# subir, garantindo que o banco já esteja atualizado. Assim o restore do
-# SnapStart nunca depende da janela de ~10s (ver scripts/db-migrate.sh).
+# subir. A Lambda não roda Flyway no restore — schema desatualizado quebra
+# requests até alguém rodar ./scripts/db-migrate.sh.
 #
 # Uso:
 #   ./scripts/deploy.sh [prod|dev] [--yes]

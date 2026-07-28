@@ -5,15 +5,13 @@
 # Aplica as migrations Flyway no banco Neon FORA da Lambda.
 #
 # Por que existe:
-#   O SnapStartFlywayMigrator roda flyway.migrate() dentro do hook afterRestore
-#   do AWS Lambda SnapStart, que tem um limite RÍGIDO de ~10s. Migrations pesadas
-#   (ex.: o baseline UUID, que leva ~12s) estouram esse limite e o restore entra
-#   em loop de timeout — o schema nunca é criado.
+#   A Lambda NÃO aplica migrations (SnapStart restore não chama Flyway — isso
+#   custava ~6–7s mesmo com schema up to date). Este script é o caminho oficial
+#   para alterar o schema no Neon, usando o mesmo Flyway do Quarkus
+#   (flyway-core via perfil Maven -Pflyway).
 #
-#   Este script aplica as migrations por fora (sem esse limite), usando o MESMO
-#   Flyway do Quarkus (flyway-core 11.9.2) para que o checksum registrado bata
-#   na validação que a Lambda faz no restore. Depois disso o restore só valida
-#   (rápido) e nunca mais dá timeout.
+#   Rode SEMPRE antes de deployar código que depende de migration nova
+#   (./scripts/deploy.sh já faz isso; o CI também).
 #
 # Uso:
 #   ./scripts/db-migrate.sh [migrate|info|validate|repair] [prod|dev]

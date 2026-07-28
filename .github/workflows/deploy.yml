@@ -38,6 +38,10 @@ jobs:
         with:
           use-installer: true
 
+      # Lambda não aplica Flyway no SnapStart restore — migrate aqui antes do sam deploy.
+      - name: Apply Flyway migrations
+        run: ./scripts/db-migrate.sh migrate prod
+
       - name: Deploy with SAM
         run: |
           sam deploy \
