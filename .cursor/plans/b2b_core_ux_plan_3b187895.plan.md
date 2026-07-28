@@ -36,14 +36,16 @@ isProject: false
 
 Documento de especificação convertido em plano acionável, com **gap analysis** contra o código atual e decisões técnicas fechadas.
 
-## Contexto de repositórios
+Contexto de repositórios
 
-| Camada | Onde vive | Papel neste plano |
-|--------|-----------|-------------------|
-| API + Postgres | este repo (`quarkus-app`) | Branding, propostas, Stripe B2B, tenant, auditoria |
-| Front Next.js 15 | repo separado (Vercel) | `/create` workspace, `/settings/agency`, `/p/[shareCode]`, Kanban |
-| Lambda stream IA | Function URL externa (`NEXT_PUBLIC_PLAN_LAMBDA_STREAM_URL`) | Gemini Flash + `collectLocationInfo` + JSON stream |
-| Email worker | [`services/email-worker`](services/email-worker) | SES white-label (Fase 3) |
+
+| Camada           | Onde vive                                                   | Papel neste plano                                                 |
+| ---------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| API + Postgres   | este repo (`quarkus-app`)                                   | Branding, propostas, Stripe B2B, tenant, auditoria                |
+| Front Next.js 15 | repo separado (Vercel)                                      | `/create` workspace, `/settings/agency`, `/p/[shareCode]`, Kanban |
+| Lambda stream IA | Function URL externa (`NEXT_PUBLIC_PLAN_LAMBDA_STREAM_URL`) | Gemini Flash + `collectLocationInfo` + JSON stream                |
+| Email worker     | `[services/email-worker](services/email-worker)`            | SES white-label (Fase 3)                                          |
+
 
 ```mermaid
 flowchart LR
@@ -55,18 +57,22 @@ flowchart LR
   Stripe["/business/pricing"] --> PayAPI["PaymentController"]
 ```
 
+
+
 ## Gap analysis (spec vs código)
 
 **Já existe (reusar):**
-- [`Agency`](src/main/java/org/example/domain/entity/Agency.java): `name`, `slug`, `logoUrl`, `primaryColor`, `planType`
-- [`AgencyMember`](src/main/java/org/example/domain/entity/AgencyMember.java) + papéis `AGENCY_OWNER` / `AGENCY_CONSULTANT`
-- [`Trip.agency`](src/main/java/org/example/domain/entity/Trip.java) + filtro B2B em [`TripController`](src/main/java/org/example/controller/TripController.java)
-- [`B2bAuditService`](src/main/java/org/example/application/services/B2bAuditService.java) + `b2b_trip_logs`
-- R2 via [`ObjectStorageService`](src/main/java/org/example/infrastructure/storage/ObjectStorageService.java) (padrão avatar/documentos)
-- Stripe Checkout em [`PaymentController`](src/main/java/org/example/controller/PaymentController.java) com `MENSAL_TRIP_AGENT` / `ANUAL_TRIP_AGENT` → hoje atualiza **Workspace**, não Agency
-- Magic Link guest ([`MagicLinkService`](src/main/java/org/example/application/services/MagicLinkService.java)) — fluxo autenticado, **não** é a proposta pública white-label
+
+- `[Agency](src/main/java/org/example/domain/entity/Agency.java)`: `name`, `slug`, `logoUrl`, `primaryColor`, `planType`
+- `[AgencyMember](src/main/java/org/example/domain/entity/AgencyMember.java)` + papéis `AGENCY_OWNER` / `AGENCY_CONSULTANT`
+- `[Trip.agency](src/main/java/org/example/domain/entity/Trip.java)` + filtro B2B em `[TripController](src/main/java/org/example/controller/TripController.java)`
+- `[B2bAuditService](src/main/java/org/example/application/services/B2bAuditService.java)` + `b2b_trip_logs`
+- R2 via `[ObjectStorageService](src/main/java/org/example/infrastructure/storage/ObjectStorageService.java)` (padrão avatar/documentos)
+- Stripe Checkout em `[PaymentController](src/main/java/org/example/controller/PaymentController.java)` com `MENSAL_TRIP_AGENT` / `ANUAL_TRIP_AGENT` → hoje atualiza **Workspace**, não Agency
+- Magic Link guest (`[MagicLinkService](src/main/java/org/example/application/services/MagicLinkService.java)`) — fluxo autenticado, **não** é a proposta pública white-label
 
 **Não existe (criar):**
+
 - Colunas `whatsapp_number`, `markup_percentage`, `stripe_subscription_id` em `agencies`
 - `proposal_status`, `base_cost`, `final_price`, `share_code` em `trips`
 - Modelo de **tiers** / passeios opcionais na proposta
@@ -77,7 +83,7 @@ flowchart LR
 - Gemini 3.5 Flash na Lambda de IA
 - Página `/p/[shareCode]` white-label
 
-**Correção à spec original:** Flyway `V3__...` **já está ocupado** (`V3__document_expiry.sql`). Próxima migration = **`V6__b2b_agency_enhancements.sql`**. `logo_url` / `primary_color` já estão no baseline — migration só adiciona o que falta.
+**Correção à spec original:** Flyway `V3__...` **já está ocupado** (`V3__document_expiry.sql`). Próxima migration = `**V6__b2b_agency_enhancements.sql`**. `logo_url` / `primary_color` já estão no baseline — migration só adiciona o que falta.
 
 ---
 
@@ -87,7 +93,7 @@ Toda PR das fases abaixo deve passar pelos três critérios:
 
 - **Letícia:** mobile-first, sem X que aborta stream, CTA WhatsApp óbvio, proposta sem marca Baggagi
 - **Valter:** tenant `agency_id` em toda query B2B; timeouts Lambda ≤30s; sem SQS na geração (manter HTTP stream); custo Gemini Flash no free
-- **Sarah:** path PLG Stripe claro (Solo R$99 / Team R$299); tempo até 1ª proposta enviável &lt; 15 min; diferencial vs Travefy/Monde
+- **Sarah:** path PLG Stripe claro (Solo R$99 / Team R$299); tempo até 1ª proposta enviável < 15 min; diferencial vs Travefy/Monde
 
 ---
 
@@ -111,12 +117,15 @@ Toda PR das fases abaixo deve passar pelos três critérios:
 
 **Solução:** fade-out do formulário `/create` → workspace fullscreen 35%/65%:
 
-| Coluna | Conteúdo |
-|--------|----------|
+
+| Coluna   | Conteúdo                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
 | Esquerda | Feed de chunks do stream (ex.: “Ponte Carlos adicionada ao Dia 1”); botão Cancelar (`AbortController`); sem X |
-| Direita | Abas Radix: Visão Geral, Logística, Câmbio, Sobrevivência/Golpes, Dicionário — dados de `collectLocationInfo` |
+| Direita  | Abas Radix: Visão Geral, Logística, Câmbio, Sobrevivência/Golpes, Dicionário — dados de `collectLocationInfo` |
+
 
 **Tasks:**
+
 - Front: substituir modal em `app/create` por workspace Framer Motion
 - Lambda location: garantir payload rico (câmbio, tips, scams, 5 frases emergência)
 - Lambda plan: prompt Gemini 3.5 Flash exigindo horários, dias de abertura, endereço e contato no JSON
@@ -125,7 +134,7 @@ Toda PR das fases abaixo deve passar pelos três critérios:
 
 ### 1B. Backend — Migration + domínio
 
-Arquivo: [`src/main/resources/db/migration/V6__b2b_agency_enhancements.sql`](src/main/resources/db/migration/V6__b2b_agency_enhancements.sql)
+Arquivo: `[src/main/resources/db/migration/V6__b2b_agency_enhancements.sql](src/main/resources/db/migration/V6__b2b_agency_enhancements.sql)`
 
 ```sql
 -- agencies
@@ -143,20 +152,22 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS share_code VARCHAR(64) UNIQUE;
 CREATE TABLE trip_proposal_tiers (...);
 ```
 
-Atualizar entidades [`Agency.java`](src/main/java/org/example/domain/entity/Agency.java), [`Trip.java`](src/main/java/org/example/domain/entity/Trip.java); enum `ProposalStatus` (`DRAFT`, `SENT`, `APPROVED`, `REJECTED`); entity `TripProposalTier`.
+Atualizar entidades `[Agency.java](src/main/java/org/example/domain/entity/Agency.java)`, `[Trip.java](src/main/java/org/example/domain/entity/Trip.java)`; enum `ProposalStatus` (`DRAFT`, `SENT`, `APPROVED`, `REJECTED`); entity `TripProposalTier`.
 
-**Create trip:** em [`CreateTripUseCaseimpl`](src/main/java/org/example/application/usecases/CreateTripUseCaseimpl.java), se user tem `AgencyMember`, setar `trip.agency` + gerar `share_code`.
+**Create trip:** em `[CreateTripUseCaseimpl](src/main/java/org/example/application/usecases/CreateTripUseCaseimpl.java)`, se user tem `AgencyMember`, setar `trip.agency` + gerar `share_code`.
 
 ### 1C. Backend — Agency branding API
 
 Novo `AgencyController` (`/api/v1/agency`):
 
-| Método | Path | Comportamento |
-|--------|------|---------------|
-| `GET` | `/me` | Branding da agência do usuário logado |
-| `PATCH` | `/me` | `primaryColor`, `whatsappNumber`, `name`, `markupPercentage` |
-| `POST` | `/me/logo-upload-request` | Presign R2 key `agencies/{agencyId}/logo-{uuid}.ext` (espelhar avatar) |
-| `POST` | `/me/logo-confirm` | Persistir `logoUrl` via `getPublicUrl` |
+
+| Método  | Path                      | Comportamento                                                          |
+| ------- | ------------------------- | ---------------------------------------------------------------------- |
+| `GET`   | `/me`                     | Branding da agência do usuário logado                                  |
+| `PATCH` | `/me`                     | `primaryColor`, `whatsappNumber`, `name`, `markupPercentage`           |
+| `POST`  | `/me/logo-upload-request` | Presign R2 key `agencies/{agencyId}/logo-{uuid}.ext` (espelhar avatar) |
+| `POST`  | `/me/logo-confirm`        | Persistir `logoUrl` via `getPublicUrl`                                 |
+
 
 Auth: membro `AGENCY_OWNER` (PATCH/logo); consultores só GET.
 
@@ -164,12 +175,15 @@ Auth: membro `AGENCY_OWNER` (PATCH/logo); consultores só GET.
 
 Novo `PublicProposalController` (`/api/v1/public/proposals`):
 
-| Método | Path | Auth |
-|--------|------|------|
-| `GET` | `/{shareCode}` | Público — trip + segmentos + tiers + **AgencyBrandingDTO** (logo, cor, whatsapp, nome). Sem markup %, sem logs internos |
-| `POST` | `/{shareCode}/approve` | Público — `proposal_status=APPROVED` + audit se agency |
+
+| Método | Path                   | Auth                                                                                                                    |
+| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/{shareCode}`         | Público — trip + segmentos + tiers + **AgencyBrandingDTO** (logo, cor, whatsapp, nome). Sem markup %, sem logs internos |
+| `POST` | `/{shareCode}/approve` | Público — `proposal_status=APPROVED` + audit se agency                                                                  |
+
 
 Editor autenticado (extensão Trip API):
+
 - `PATCH /trips/{id}/pricing` — `baseCost` + `markupPercentage` → recalcula `finalPrice`
 - `PUT /trips/{id}/tiers` — CRUD tiers
 - `POST /trips/{id}/proposal/send` — `SENT` + (opcional) dispara email depois
@@ -178,18 +192,21 @@ Ajustar DTOs de resposta de trip para expor `proposalStatus`, `finalPrice`, `sha
 
 ### 1E. Backend — Stripe B2B self-service
 
-Em [`PaymentController`](src/main/java/org/example/controller/PaymentController.java) / webhook:
+Em `[PaymentController](src/main/java/org/example/controller/PaymentController.java)` / webhook:
+
 - Mapear `MENSAL_TRIP_AGENT` / `ANUAL_TRIP_AGENT` (e novos price IDs Solo R$99 / Team R$299 se distintos) para `Agency.planType` + `stripeSubscriptionId`
 - Front `/business/pricing` chama checkout existente
 
 ### 1F. Frontend B2B (repo Next.js)
 
-| Rota | Entrega Sprint 1 |
-|------|------------------|
-| `/settings/agency` | Form branding + preview live Magic/proposta (`--agency-primary-color`) |
-| `/p/[shareCode]` | Proposta white-label, tiers/opcionais, CTA WhatsApp + Aprovar |
-| Editor trip | Slider markup privado + preview preço cliente |
-| `/business/pricing` | Cards Solo/Team → Stripe Checkout |
+
+| Rota                | Entrega Sprint 1                                                       |
+| ------------------- | ---------------------------------------------------------------------- |
+| `/settings/agency`  | Form branding + preview live Magic/proposta (`--agency-primary-color`) |
+| `/p/[shareCode]`    | Proposta white-label, tiers/opcionais, CTA WhatsApp + Aprovar          |
+| Editor trip         | Slider markup privado + preview preço cliente                          |
+| `/business/pricing` | Cards Solo/Team → Stripe Checkout                                      |
+
 
 Types/Zod: `types/b2b.ts`, `lib/validations/b2bSchemas.ts`, hook `useAgencyBranding`.
 
@@ -200,7 +217,7 @@ Types/Zod: `types/b2b.ts`, `lib/validations/b2bSchemas.ts`, hook `useAgencyBrand
 - Kanban `/business/pipeline`: colunas mapeadas a `proposal_status` (+ `LOST`); drag-and-drop atualiza status via API; card mostra last-contact (nova coluna `last_contact_at` ou derivado de `b2b_trip_logs`)
 - `/settings/team`: listar/invitar `AgencyMember`; OWNER vê tudo, CONSULTANT só próprias trips (já parcialmente no `TripController`)
 - API read de auditoria: `GET /agency/audit?tripId=`
-- Vouchers: estender [`TripDocument`](src/main/java/org/example/domain/entity/TripDocument.java) com `visibility` (`CLIENT` | `INTERNAL`) + vínculo opcional `activity_id`/`segment_id`; filtro no payload público
+- Vouchers: estender `[TripDocument](src/main/java/org/example/domain/entity/TripDocument.java)` com `visibility` (`CLIENT` | `INTERNAL`) + vínculo opcional `activity_id`/`segment_id`; filtro no payload público
 
 ## Fase 3 — Comunicação & BI
 
@@ -220,23 +237,26 @@ Types/Zod: `types/b2b.ts`, `lib/validations/b2bSchemas.ts`, hook `useAgencyBrand
 ## Checklist Sprint 1 (definição de pronto)
 
 **UX / IA (repos externos)**
-- [ ] Workspace fullscreen `/create` com abas guia + Cancelar sem X
-- [ ] Lambda plan em Gemini 3.5 Flash com horários/contato obrigatórios no JSON
-- [ ] `collectLocationInfo` alimenta câmbio, golpes, dicionário
+
+- Workspace fullscreen `/create` com abas guia + Cancelar sem X
+- Lambda plan em Gemini 3.5 Flash com horários/contato obrigatórios no JSON
+- `collectLocationInfo` alimenta câmbio, golpes, dicionário
 
 **Backend (este repo)**
-- [ ] `V6__b2b_agency_enhancements.sql` aplicada
-- [ ] `AgencyController` branding + logo R2
-- [ ] `CreateTrip` associa `agency` + gera `share_code`
-- [ ] `PublicProposalController` GET + approve
-- [ ] Pricing/markup no editor + tiers mínimos
-- [ ] Webhook Stripe sincroniza `Agency.planType`
+
+- `V6__b2b_agency_enhancements.sql` aplicada
+- `AgencyController` branding + logo R2
+- `CreateTrip` associa `agency` + gera `share_code`
+- `PublicProposalController` GET + approve
+- Pricing/markup no editor + tiers mínimos
+- Webhook Stripe sincroniza `Agency.planType`
 
 **Frontend (repo Next.js)**
-- [ ] `/settings/agency` com preview
-- [ ] `/p/[shareCode]` white-label + WhatsApp + Aprovar
-- [ ] Slider markup no editor
-- [ ] `/business/pricing` → Checkout
+
+- `/settings/agency` com preview
+- `/p/[shareCode]` white-label + WhatsApp + Aprovar
+- Slider markup no editor
+- `/business/pricing` → Checkout
 
 **Gates personas:** Letícia (mobile proposta), Valter (isolamento tenant + sem SQS), Sarah (checkout PLG funcional).
 
