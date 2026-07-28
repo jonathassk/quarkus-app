@@ -287,8 +287,10 @@ public class ApplicationConfig {
             TokenService tokenService,
             UserRepository userRepository,
             org.example.application.services.event.EventService eventService,
-            org.example.application.services.event.EventParticipantService participantService) {
-        return new EventController(tokenService, userRepository, eventService, participantService);
+            org.example.application.services.event.EventParticipantService participantService,
+            ObjectStorageService objectStorageService) {
+        return new EventController(
+                tokenService, userRepository, eventService, participantService, objectStorageService);
     }
 
     @Produces
@@ -296,8 +298,15 @@ public class ApplicationConfig {
     public EventPostController eventPostController(
             TokenService tokenService,
             UserRepository userRepository,
-            org.example.application.services.event.EventPostService eventPostService) {
-        return new EventPostController(tokenService, userRepository, eventPostService);
+            org.example.application.services.event.EventPostService eventPostService,
+            org.example.application.services.event.EventAuthorizationService eventAuthorizationService,
+            ObjectStorageService objectStorageService) {
+        return new EventPostController(
+                tokenService,
+                userRepository,
+                eventPostService,
+                eventAuthorizationService,
+                objectStorageService);
     }
 
     @Produces

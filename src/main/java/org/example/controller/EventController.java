@@ -10,14 +10,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.dto.event.*;
 import org.example.application.services.TokenService;
 import org.example.application.services.event.EventParticipantService;
 import org.example.application.services.event.EventService;
 import org.example.domain.repository.UserRepository;
+import org.example.infrastructure.storage.ObjectStorageService;
+import org.example.utils.DocumentUploadSupport;
 import org.example.utils.RequestAuthHeaders;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,6 +37,74 @@ public class EventController {
     private final UserRepository userRepository;
     private final EventService eventService;
     private final EventParticipantService participantService;
+    private final ObjectStorageService objectStorageService;
+
+    @POST
+    @Path("/cover-upload-request")
+    @Operation(
+            summary = "Solicitar upload de capa do evento",
+            description = "Gera URL presignada R2 para a imagem de capa. Apenas imagens (JPEG, PNG, WebP, GIF).")
+    public Response coverUploadRequest(UploadDocumentRequest req, @Context HttpHeaders headers) {
+        Optional<UUID> userId = resolveAuthenticatedUserId(headers);
+        if (userId.isEmpty()) {
+            return unauthorized();
+        }
+        if (!objectStorageService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(Map.of("code", "STORAGE_NOT_CONFIGURED", "message", "Document storage is not configured"))
+                    .build();
+        }
+        if (req == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("code", "VALIDATION_ERROR", "message", "Request body is required"))
+                    .build();
+        }
+
+        Optional<DocumentUploadSupport.ResolvedUpload> resolved =
+                DocumentUploadSupport.resolve(req.getFileName(), req.getContentType());
+        if (resolved.isEmpty()) {
+            String msg = DocumentUploadSupport.unsupportedTypeMessage(req.getContentType(), req.getFileName());
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("code", "UNSUPPORTED_CONTENT_TYPE", "message", msg))
+                    .build();
+        }
+
+        DocumentUploadSupport.ResolvedUpload upload = resolved.get();
+        if (!upload.contentType().startsWith("image/")) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of(
+                            "code",
+                            "UNSUPPORTED_CONTENT_TYPE",
+                            "message",
+                            "Only image uploads are allowed for event covers (JPEG, PNG, WebP, GIF)"))
+                    .build();
+        }
+
+        String extension = DocumentUploadSupport.extractExtension(upload.fileName());
+        String s3Key = "events/" + userId.get() + "/cover-" + UUID.randomUUID() + extension;
+
+        try {
+            String uploadUrl = objectStorageService.presignPut(s3Key, upload.contentType());
+            String publicUrl = objectStorageService.getPublicUrl(s3Key);
+            log.info("POST /events/cover-upload-request 201 userId={} s3Key={}", userId.get(), s3Key);
+            return Response.status(Response.Status.CREATED)
+                    .entity(Map.of(
+                            "uploadUrl", uploadUrl,
+                            "s3Key", s3Key,
+                            "publicUrl", publicUrl,
+                            "expiresInSeconds", objectStorageService.getUploadPresignSeconds()))
+                    .build();
+        } catch (Exception e) {
+            log.error("Event cover upload request failed userId={}", userId.get(), e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of(
+                            "code",
+                            "INTERNAL_ERROR",
+                            "message",
+                            "Erro ao gerar URL presignada: " + e.getMessage()))
+                    .build();
+        }
+    }
 
     @POST
     @Transactional

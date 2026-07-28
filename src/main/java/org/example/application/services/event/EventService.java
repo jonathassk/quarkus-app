@@ -142,8 +142,12 @@ public class EventService {
             event.setVisibility(request.getVisibility());
         }
         if (request.getCoverImageUrl() != null) {
-            validationUtils.validateImageUrl(request.getCoverImageUrl());
-            event.setCoverImageUrl(request.getCoverImageUrl());
+            if (request.getCoverImageUrl().isBlank()) {
+                event.setCoverImageUrl(null);
+            } else {
+                validationUtils.validateImageUrl(request.getCoverImageUrl());
+                event.setCoverImageUrl(request.getCoverImageUrl());
+            }
         }
         if (request.getLocation() != null) {
             if (request.getLocation().getName() != null) {
