@@ -36,7 +36,7 @@ isProject: false
 
 Documento de especificação convertido em plano acionável, com **gap analysis** contra o código atual e decisões técnicas fechadas.
 
-Contexto de repositórios
+Contexto de repositórios 
 
 
 | Camada           | Onde vive                                                   | Papel neste plano                                                 |
