@@ -1,18 +1,17 @@
 package org.example.infrastructure.auth;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.jwk.source.RemoteJWKSet;
-import com.nimbusds.jose.proc.JWSKeySelector;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
-import com.nimbusds.jose.proc.SecurityContext;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
+import com.nimbusds.jose.RemoteKeySourceException;
 import com.nimbusds.jose.crypto.Ed25519Verifier;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKMatcher;
 import com.nimbusds.jose.jwk.JWKSelector;
 import com.nimbusds.jose.jwk.OctetKeyPair;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.RemoteJWKSet;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jose.util.DefaultResourceRetriever;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +32,11 @@ import java.util.Optional;
 @Slf4j
 @ApplicationScoped
 public class NeonAuthJwtVerifier {
+
+    /** Neon Auth JWKS can take multiple seconds (TLS + cold origin); Nimbus default is 500ms. */
+    private static final int JWKS_CONNECT_TIMEOUT_MS = 5_000;
+    private static final int JWKS_READ_TIMEOUT_MS = 15_000;
+    private static final int JWKS_SIZE_LIMIT_BYTES = RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT;
 
     @ConfigProperty(name = "neon.auth.base-url")
     Optional<String> baseUrl;
@@ -116,8 +120,15 @@ public class NeonAuthJwtVerifier {
         try {
             log.info("Lazy-initializing RemoteJWKSet for: {}", remoteJwksUrl);
             URL url = URI.create(remoteJwksUrl).toURL();
-            jwkSource = new RemoteJWKSet<>(url);
-            log.info("RemoteJWKSet initialized successfully.");
+            DefaultResourceRetriever retriever = new DefaultResourceRetriever(
+                    JWKS_CONNECT_TIMEOUT_MS,
+                    JWKS_READ_TIMEOUT_MS,
+                    JWKS_SIZE_LIMIT_BYTES);
+            jwkSource = new RemoteJWKSet<>(url, retriever);
+            log.info(
+                    "RemoteJWKSet initialized (connectTimeout={}ms, readTimeout={}ms).",
+                    JWKS_CONNECT_TIMEOUT_MS,
+                    JWKS_READ_TIMEOUT_MS);
         } catch (Exception e) {
             log.error("Failed to initialize RemoteJWKSet from {}: {}", remoteJwksUrl, e.getMessage(), e);
         }
@@ -229,6 +240,12 @@ public class NeonAuthJwtVerifier {
             return new NeonAuthClaims(sub.trim(), email, name, image, provider);
         } catch (AuthTokenException e) {
             throw e;
+        } catch (RemoteKeySourceException e) {
+            log.warn("Neon Auth JWKS fetch failed: {}", e.getMessage(), e);
+            throw new AuthTokenException(
+                    "JWKS_UNAVAILABLE",
+                    "Could not retrieve Neon Auth JWKS (network/timeout). Retry or set NEON_AUTH_JWK_JSON.",
+                    e);
         } catch (java.text.ParseException | com.nimbusds.jose.JOSEException e) {
             log.warn("Neon Auth JWT validation failed: {}", e.getMessage(), e);
             String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
