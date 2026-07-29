@@ -13,6 +13,7 @@ import org.example.application.dto.trip.request.UserInlcudeRequestDTO;
 import org.example.application.dto.trip.TripUserDTO;
 import org.example.application.services.TripService;
 import org.example.application.services.chat.TripChatService;
+import org.example.application.services.trip.TripItineraryService;
 import org.example.application.usecases.interfaces.UpdateTripUseCase;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.User;
@@ -55,6 +56,7 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
 
             if (tripRequestDTO.getSegments() != null) {
                 tripService.updateTripSegments(trip, tripRequestDTO.getSegments());
+                TripItineraryService.syncBudgetTotalFromItinerary(trip);
             }
 
             if (tripRequestDTO.getUsers() != null) {

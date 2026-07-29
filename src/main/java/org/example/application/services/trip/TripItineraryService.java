@@ -16,6 +16,7 @@ import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.TripSegmentRepository;
 import org.example.domain.repository.TripSegmentRevisionRepository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +49,7 @@ public class TripItineraryService {
 
         applyDtoToSegment(segment, body);
         tripSegmentRepository.persist(segment);
+        syncBudgetTotalFromItinerary(trip);
         trip.setUpdatedAt(Instant.now());
         tripRepository.persist(trip);
         return toDto(segment);
@@ -65,6 +67,7 @@ public class TripItineraryService {
             TripSegmentDTO previous = objectMapper.readValue(latest.getPayload(), TripSegmentDTO.class);
             applyDtoToSegment(segment, previous);
             tripSegmentRepository.persist(segment);
+            syncBudgetTotalFromItinerary(trip);
             trip.setUpdatedAt(Instant.now());
             tripRepository.persist(trip);
             revisionRepository.delete(latest);
@@ -225,6 +228,30 @@ public class TripItineraryService {
                 .activities(acts)
                 .meals(meals)
                 .build();
+    }
+
+    /** Mantém {@code budgetTotal} = soma dos custos de atividades e refeições. */
+    static void syncBudgetTotalFromItinerary(Trip trip) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (trip.getSegments() != null) {
+            for (TripSegment segment : trip.getSegments()) {
+                if (segment.getActivities() != null) {
+                    for (Activity a : segment.getActivities()) {
+                        if (a.getCost() != null) {
+                            total = total.add(a.getCost());
+                        }
+                    }
+                }
+                if (segment.getMeals() != null) {
+                    for (Meal m : segment.getMeals()) {
+                        if (m.getCost() != null) {
+                            total = total.add(m.getCost());
+                        }
+                    }
+                }
+            }
+        }
+        trip.setBudgetTotal(total);
     }
 
     private TripSegment requireSegment(Trip trip, UUID segmentId) {
