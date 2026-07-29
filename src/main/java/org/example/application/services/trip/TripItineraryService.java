@@ -231,7 +231,7 @@ public class TripItineraryService {
     }
 
     /** Mantém {@code budgetTotal} = soma dos custos de atividades e refeições. */
-    static void syncBudgetTotalFromItinerary(Trip trip) {
+    public static void syncBudgetTotalFromItinerary(Trip trip) {
         BigDecimal total = BigDecimal.ZERO;
         if (trip.getSegments() != null) {
             for (TripSegment segment : trip.getSegments()) {
