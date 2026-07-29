@@ -192,9 +192,11 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
     @Transactional
     public void deleteTrip(UUID tripId, UUID requesterUserId) {
         Trip trip = tripRepository.findById(tripId);
+        // DELETE é idempotente: se a viagem já não existe (cache stale / double-click),
+        // trata como sucesso em vez de 404.
         if (trip == null) {
-            log.warn("Delete trip failed: trip not found, tripId={}", tripId);
-            throw new NotFoundException("Trip not found with id: " + tripId);
+            log.info("Delete trip no-op: trip already absent, tripId={}", tripId);
+            return;
         }
         User creator = trip.getCreatedBy();
         if (creator == null || !creator.id.equals(requesterUserId)) {
