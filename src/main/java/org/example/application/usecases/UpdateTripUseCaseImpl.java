@@ -177,6 +177,12 @@ public class UpdateTripUseCaseImpl implements UpdateTripUseCase {
         if (request.getDescription() != null) {
             trip.setDescription(request.getDescription());
         }
+        if (request.getFlightDetails() != null) {
+            trip.setFlightDetails(request.getFlightDetails().isBlank() ? null : request.getFlightDetails().trim());
+        }
+        if (request.getHotelDetails() != null) {
+            trip.setHotelDetails(request.getHotelDetails().isBlank() ? null : request.getHotelDetails().trim());
+        }
         if (request.getStatus() != null && !request.getStatus().isBlank()) {
             if (trip.getStartDate() != null && trip.getEndDate() != null) {
                 throw new IllegalArgumentException(

@@ -23,6 +23,10 @@ public class TripResponseDTO {
     private TripStatus status;
     private String name;
     private String description;
+    /** Passagens já compradas pelo usuário (texto livre). */
+    private String flightDetails;
+    /** Hospedagem já reservada pelo usuário (texto livre). */
+    private String hotelDetails;
     private BigDecimal budgetTotal;
     private LocalDate startDate;
     private LocalDate endDate;

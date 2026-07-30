@@ -34,6 +34,20 @@ public class Trip extends PanacheEntityBase {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    /**
+     * Detalhes de voos/passagens já comprados pelo usuário (localizadores, companhia, horários).
+     * A aplicação não vende passagens — apenas registra o que o viajante já adquiriu.
+     */
+    @Column(name = "flight_details", columnDefinition = "TEXT")
+    private String flightDetails;
+
+    /**
+     * Detalhes de hospedagem já reservada (hotel, endereço, check-in/out, confirmação).
+     * A aplicação não vende hospedagem — apenas registra o que o viajante já adquiriu.
+     */
+    @Column(name = "hotel_details", columnDefinition = "TEXT")
+    private String hotelDetails;
+
     @Column(name = "budget_total", precision = 10, scale = 2)
     private BigDecimal budgetTotal;
 

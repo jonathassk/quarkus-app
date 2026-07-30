@@ -75,6 +75,12 @@ public class TripServiceImpl implements TripService {
         if (dto.getCoverImageUrl() != null) trip.setCoverImageUrl(dto.getCoverImageUrl());
         if (dto.getName() != null) trip.setName(dto.getName());
         if (dto.getDescription() != null) trip.setDescription(dto.getDescription());
+        if (dto.getFlightDetails() != null) {
+            trip.setFlightDetails(dto.getFlightDetails().isBlank() ? null : dto.getFlightDetails().trim());
+        }
+        if (dto.getHotelDetails() != null) {
+            trip.setHotelDetails(dto.getHotelDetails().isBlank() ? null : dto.getHotelDetails().trim());
+        }
         trip.setStartDate(dto.getStartDate());
         trip.setEndDate(dto.getEndDate());
         if (dto.getBudgetTotal() != null) trip.setBudgetTotal(dto.getBudgetTotal());
