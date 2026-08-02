@@ -16,18 +16,18 @@ public class AgencyAnalyticsDTO {
     private long proposalsDraft;
     private long proposalsLost;
     private double conversionRate;
-    /** Faturamento previsto / volume bruto de propostas ganhas ou em fechamento. */
+    /** Volume bruto (soma de finalPrice) dos planejamentos com preço no funil ativo. */
     private BigDecimal forecastRevenue;
     /** Alias explícito do volume bruto (mesma base do forecast). */
     private BigDecimal grossVolume;
-    /** Soma de (finalPrice - baseCost) nas propostas com preço. */
+    /** Soma do valor cobrado pelo agente (finalPrice - baseCost) nos planejamentos com preço. */
     private BigDecimal estimatedMargin;
     /** Markup médio % (margem / base) nas propostas com base e final. */
     private Double avgMarginPercentage;
     private long activeClients;
     private long memberClients;
     private long guestClients;
-    /** Tíquete médio (finalPrice) das propostas com preço na base de volume. */
+    /** Tíquete médio (finalPrice) dos planejamentos com preço na base de volume. */
     private BigDecimal avgPackagePrice;
     private List<DestinationStat> topDestinations;
 

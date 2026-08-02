@@ -631,9 +631,14 @@ public class ProposalService {
 
         for (Trip t : trips) {
             ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
-            boolean countsAsVolume = s == ProposalStatus.APPROVED
+            // Volume financeiro: planejamentos com preço definido (ativos no funil).
+            // Recusadas/perdidas ficam de fora do faturamento, mas entram nas contagens.
+            boolean countsAsVolume = t.getFinalPrice() != null
+                    && (s == ProposalStatus.DRAFT
+                    || s == ProposalStatus.SENT
+                    || s == ProposalStatus.APPROVED
                     || s == ProposalStatus.PENDING_PAYMENT
-                    || s == ProposalStatus.CONFIRMED;
+                    || s == ProposalStatus.CONFIRMED);
             switch (s) {
                 case DRAFT -> draft++;
                 case SENT -> sent++;
@@ -643,7 +648,7 @@ public class ProposalService {
                 case REJECTED -> rejected++;
                 case LOST -> lost++;
             }
-            if (countsAsVolume && t.getFinalPrice() != null) {
+            if (countsAsVolume) {
                 forecast = forecast.add(t.getFinalPrice());
                 pricedVolumeTrips++;
                 if (t.getBaseCost() != null) {
