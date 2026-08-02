@@ -29,7 +29,8 @@ public class AgencyClient extends PanacheEntityBase {
     @Column(nullable = false, length = 255)
     private String name;
 
-    @Column(nullable = false, length = 255)
+    /** Opcional para visitantes sem e-mail; único por agência quando preenchido. */
+    @Column(length = 255)
     private String email;
 
     @Column(length = 64)

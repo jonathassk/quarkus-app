@@ -48,6 +48,10 @@ public class Notification extends PanacheEntityBase {
     @Column(name = "entity_id", columnDefinition = "uuid")
     private UUID entityId;
 
+    /** Deep link relativo opcional (ex.: /invites/{token}). Sobrescreve o resolvido por kind. */
+    @Column(name = "deep_link", length = 512)
+    private String deepLink;
+
     @Column(name = "read_at")
     private Instant readAt;
 

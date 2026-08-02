@@ -105,19 +105,30 @@ public class TripInviteService {
                         .build();
         inviteRepository.persist(invite);
 
-        sendInviteEmail(invite, trip);
-        // Se o convidado já tem conta, notifica in-app (e-mail já foi pelo convite).
-        existingUser.ifPresent(
-                invitee ->
-                        notificationService.create(
-                                invitee.id,
-                                NotificationKind.TRIP_SHARED,
-                                "Convite para \"" + (trip.getName() != null ? trip.getName() : "viagem") + "\"",
-                                "Você foi convidado a colaborar nesta viagem.",
-                                "TRIP",
-                                trip.id,
-                                false));
-        log.info("Created trip invite tripId={} email={}", tripId, email);
+        String tripName = trip.getName() != null ? trip.getName() : "viagem";
+        String acceptPath = "/invites/" + invite.getToken();
+
+        if (existingUser.isPresent()) {
+            // Usuário já cadastrado: notificação in-app para aceitar no site (sem e-mail duplicado).
+            User invitee = existingUser.get();
+            notificationService.create(
+                    invitee.id,
+                    NotificationKind.TRIP_INVITE,
+                    "Convite para \"" + tripName + "\"",
+                    "Aceite o convite no Baggagi para ver e editar o planejamento.",
+                    "TRIP",
+                    trip.id,
+                    false,
+                    acceptPath);
+        } else {
+            // Usuário novo: e-mail com o endereço convidado + link para ver/editar o planejamento.
+            sendInviteEmail(invite, trip);
+        }
+        log.info(
+                "Created trip invite tripId={} email={} existingUser={}",
+                tripId,
+                email,
+                existingUser.isPresent());
         return toDto(invite);
     }
 
@@ -171,7 +182,23 @@ public class TripInviteService {
         invite.setToken(generateUniqueToken());
         invite.setExpiresAt(Instant.now().plus(DEFAULT_TTL));
         inviteRepository.persist(invite);
-        sendInviteEmail(invite, trip);
+
+        String tripName = trip.getName() != null ? trip.getName() : "viagem";
+        String acceptPath = "/invites/" + invite.getToken();
+        Optional<User> existingUser = userRepository.findByEmail(invite.getEmail());
+        if (existingUser.isPresent()) {
+            notificationService.create(
+                    existingUser.get().id,
+                    NotificationKind.TRIP_INVITE,
+                    "Convite para \"" + tripName + "\"",
+                    "Aceite o convite no Baggagi para ver e editar o planejamento.",
+                    "TRIP",
+                    trip.id,
+                    false,
+                    acceptPath);
+        } else {
+            sendInviteEmail(invite, trip);
+        }
         return toDto(invite);
     }
 
@@ -260,22 +287,32 @@ public class TripInviteService {
     private void sendInviteEmail(TripInvite invite, Trip trip) {
         String url = inviteUrl(invite.getToken());
         String tripName = trip.getName() != null ? trip.getName() : "viagem";
+        String email = invite.getEmail();
         String subject = "Você foi convidado para \"" + tripName + "\" no Baggagi";
         String text =
-                "Você foi convidado para colaborar na viagem \""
+                "Olá!\n\n"
+                        + "Você ("
+                        + email
+                        + ") foi convidado para ver e editar o planejamento da viagem \""
                         + tripName
-                        + "\".\n\nAbra o link para aceitar (válido por 7 dias):\n"
+                        + "\" no Baggagi.\n\n"
+                        + "Abra o link abaixo para criar sua conta (use este mesmo e-mail) e aceitar o convite "
+                        + "(válido por 7 dias):\n"
                         + url
-                        + "\n\nSe você não tem conta, crie uma com este mesmo e-mail e depois abra o link.";
+                        + "\n\nSe você não solicitou este acesso, ignore este e-mail.";
         String html =
-                "<p>Você foi convidado para colaborar na viagem <strong>"
+                "<p>Olá!</p>"
+                        + "<p>Você (<strong>"
+                        + escapeHtml(email)
+                        + "</strong>) foi convidado para <strong>ver e editar</strong> o planejamento da viagem "
+                        + "<strong>"
                         + escapeHtml(tripName)
-                        + "</strong>.</p>"
+                        + "</strong> no Baggagi.</p>"
                         + "<p><a href=\""
                         + url
-                        + "\">Aceitar convite</a></p>"
-                        + "<p>O link é válido por 7 dias. Use o mesmo e-mail do convite ao entrar.</p>";
-        emailWorkerInvoker.enqueueDirectEmail(invite.getEmail(), subject, text, html);
+                        + "\">Aceitar convite e abrir o planejamento</a></p>"
+                        + "<p>O link é válido por 7 dias. Crie a conta com o mesmo e-mail do convite.</p>";
+        emailWorkerInvoker.enqueueDirectEmail(email, subject, text, html);
     }
 
     private Trip requireManageableTrip(UUID tripId, UUID actorId) {

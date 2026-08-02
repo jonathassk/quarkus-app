@@ -614,39 +614,46 @@ public class ProposalService {
         return listPipeline(userId, null, null, null, 0, 100).getItems();
     }
 
+    @Transactional
     public AgencyAnalyticsDTO analytics(UUID userId) {
-        AgencyMember member = agencyService.requireOwner(userId);
-        List<Trip> trips = tripRepository.findByAgencyId(member.getAgency().id);
+        // Qualquer membro da agência vê o BI do portal /business.
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        UUID agencyId = member.getAgency().id;
+        List<Trip> trips = tripRepository.findByAgencyId(agencyId);
 
         long draft = 0, sent = 0, approved = 0, rejected = 0, lost = 0, pendingPayment = 0, confirmed = 0;
         BigDecimal forecast = BigDecimal.ZERO;
+        BigDecimal marginSum = BigDecimal.ZERO;
+        BigDecimal baseSumForMarkup = BigDecimal.ZERO;
+        BigDecimal marginSumForMarkup = BigDecimal.ZERO;
+        long pricedVolumeTrips = 0;
         Map<String, Long> destinations = new LinkedHashMap<>();
 
         for (Trip t : trips) {
             ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
+            boolean countsAsVolume = s == ProposalStatus.APPROVED
+                    || s == ProposalStatus.PENDING_PAYMENT
+                    || s == ProposalStatus.CONFIRMED;
             switch (s) {
                 case DRAFT -> draft++;
                 case SENT -> sent++;
-                case APPROVED -> {
-                    approved++;
-                    if (t.getFinalPrice() != null) {
-                        forecast = forecast.add(t.getFinalPrice());
-                    }
-                }
-                case PENDING_PAYMENT -> {
-                    pendingPayment++;
-                    if (t.getFinalPrice() != null) {
-                        forecast = forecast.add(t.getFinalPrice());
-                    }
-                }
-                case CONFIRMED -> {
-                    confirmed++;
-                    if (t.getFinalPrice() != null) {
-                        forecast = forecast.add(t.getFinalPrice());
-                    }
-                }
+                case APPROVED -> approved++;
+                case PENDING_PAYMENT -> pendingPayment++;
+                case CONFIRMED -> confirmed++;
                 case REJECTED -> rejected++;
                 case LOST -> lost++;
+            }
+            if (countsAsVolume && t.getFinalPrice() != null) {
+                forecast = forecast.add(t.getFinalPrice());
+                pricedVolumeTrips++;
+                if (t.getBaseCost() != null) {
+                    BigDecimal tripMargin = t.getFinalPrice().subtract(t.getBaseCost());
+                    marginSum = marginSum.add(tripMargin);
+                    if (t.getBaseCost().compareTo(BigDecimal.ZERO) > 0) {
+                        baseSumForMarkup = baseSumForMarkup.add(t.getBaseCost());
+                        marginSumForMarkup = marginSumForMarkup.add(tripMargin);
+                    }
+                }
             }
             String dest = t.getName() != null ? t.getName() : "—";
             if (t.getSegments() != null && !t.getSegments().isEmpty()
@@ -659,6 +666,29 @@ public class ProposalService {
         long conversionDenom = sent + approved + pendingPayment + confirmed + rejected + lost;
         double conversion = conversionDenom == 0 ? 0.0
                 : ((approved + pendingPayment + confirmed) * 100.0) / conversionDenom;
+
+        BigDecimal avgPackage = pricedVolumeTrips == 0
+                ? BigDecimal.ZERO
+                : forecast.divide(BigDecimal.valueOf(pricedVolumeTrips), 2, RoundingMode.HALF_UP);
+
+        Double avgMarginPct = null;
+        if (baseSumForMarkup.compareTo(BigDecimal.ZERO) > 0) {
+            avgMarginPct = marginSumForMarkup
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(baseSumForMarkup, 1, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
+        List<AgencyClient> agencyClients = agencyClientRepository.findByAgencyId(agencyId);
+        long memberClients = 0;
+        long guestClients = 0;
+        for (AgencyClient c : agencyClients) {
+            if (c.getUser() != null || hasMemberTag(c.getTags())) {
+                memberClients++;
+            } else {
+                guestClients++;
+            }
+        }
 
         List<AgencyAnalyticsDTO.DestinationStat> top = destinations.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
@@ -675,8 +705,27 @@ public class ProposalService {
                 .proposalsLost(lost)
                 .conversionRate(Math.round(conversion * 100.0) / 100.0)
                 .forecastRevenue(forecast)
+                .grossVolume(forecast)
+                .estimatedMargin(marginSum)
+                .avgMarginPercentage(avgMarginPct)
+                .activeClients(agencyClients.size())
+                .memberClients(memberClients)
+                .guestClients(guestClients)
+                .avgPackagePrice(avgPackage)
                 .topDestinations(top)
                 .build();
+    }
+
+    private static boolean hasMemberTag(String tags) {
+        if (tags == null || tags.isBlank()) {
+            return false;
+        }
+        for (String part : tags.split(",")) {
+            if ("membro-site".equalsIgnoreCase(part.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private PublicProposalDTO toPublicDto(Trip trip) {

@@ -11,8 +11,10 @@ import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyClient;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.entity.Trip;
+import org.example.domain.entity.User;
 import org.example.domain.repository.AgencyClientRepository;
 import org.example.domain.repository.TripRepository;
+import org.example.domain.repository.UserRepository;
 
 import java.util.Arrays;
 import java.util.List;
@@ -33,6 +35,8 @@ public class AgencyClientService {
     AgencyClientRepository clientRepository;
     @Inject
     TripRepository tripRepository;
+    @Inject
+    UserRepository userRepository;
 
     public List<AgencyClientDTO> list(UUID userId, String q, int page, int size) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
@@ -51,8 +55,9 @@ public class AgencyClientService {
     public AgencyClientDTO create(UUID userId, UpsertAgencyClientRequest request) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         validate(request, true);
-        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
-        if (clientRepository.findByAgencyAndEmail(member.getAgency().id, email).isPresent()) {
+        String email = normalizeEmail(request.getEmail());
+        if (email != null
+                && clientRepository.findByAgencyAndEmail(member.getAgency().id, email).isPresent()) {
             throw new BadRequestException("Client with this email already exists");
         }
         AgencyClient client = AgencyClient.builder()
@@ -62,6 +67,7 @@ public class AgencyClientService {
                 .phone(blankToNull(request.getPhone()))
                 .notes(blankToNull(request.getNotes()))
                 .tags(blankToNull(request.getTags()))
+                .user(resolvePlatformUser(email))
                 .build();
         clientRepository.persist(client);
         return toDto(client, false);
@@ -74,18 +80,18 @@ public class AgencyClientService {
         if (request.getName() != null && !request.getName().isBlank()) {
             client.setName(request.getName().trim());
         }
-        if (request.getEmail() != null && !request.getEmail().isBlank()) {
-            String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
-            if (!EMAIL_PATTERN.matcher(email).matches()) {
-                throw new BadRequestException("email is invalid");
+        if (request.getEmail() != null) {
+            String email = normalizeEmail(request.getEmail());
+            if (email != null) {
+                clientRepository.findByAgencyAndEmail(member.getAgency().id, email)
+                        .ifPresent(other -> {
+                            if (!other.id.equals(client.id)) {
+                                throw new BadRequestException("Client with this email already exists");
+                            }
+                        });
             }
-            clientRepository.findByAgencyAndEmail(member.getAgency().id, email)
-                    .ifPresent(other -> {
-                        if (!other.id.equals(client.id)) {
-                            throw new BadRequestException("Client with this email already exists");
-                        }
-                    });
             client.setEmail(email);
+            client.setUser(resolvePlatformUser(email));
         }
         if (request.getPhone() != null) {
             client.setPhone(blankToNull(request.getPhone()));
@@ -129,14 +135,29 @@ public class AgencyClientService {
                 throw new BadRequestException("name is required");
             }
         }
-        if (requireAll || request.getEmail() != null) {
-            if (request.getEmail() == null || request.getEmail().isBlank()) {
-                throw new BadRequestException("email is required");
-            }
-            if (!EMAIL_PATTERN.matcher(request.getEmail().trim()).matches()) {
-                throw new BadRequestException("email is invalid");
-            }
+        String email = normalizeEmail(request.getEmail());
+        String phone = blankToNull(request.getPhone());
+        if (email != null && !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new BadRequestException("email is invalid");
         }
+        if (requireAll && email == null && phone == null) {
+            throw new BadRequestException("email or phone is required");
+        }
+    }
+
+    private static String normalizeEmail(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** Vincula à conta Baggagi quando o e-mail já existe na plataforma. */
+    private User resolvePlatformUser(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return userRepository.findByEmail(email).orElse(null);
     }
 
     private AgencyClientDTO toDto(AgencyClient client, boolean includeTrips) {

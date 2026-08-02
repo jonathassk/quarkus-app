@@ -32,6 +32,9 @@ public final class NotificationDeepLinks {
         if (kind == NotificationKind.EVENT_RSVP) {
             return entityId != null ? "/event/" + entityId : "/events";
         }
+        if (kind == NotificationKind.TRIP_INVITE) {
+            return entityId != null ? "/plan/" + entityId : "/";
+        }
         if (kind == NotificationKind.TRIP_SHARED || kind == NotificationKind.TRIP_COMMENT) {
             return entityId != null ? "/plan/" + entityId : "/";
         }

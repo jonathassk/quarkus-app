@@ -50,4 +50,12 @@ class NotificationDeepLinksTest {
                 "/settings",
                 NotificationDeepLinks.resolve(NotificationKind.DOC_EXPIRING, "DOCUMENT", UUID.randomUUID()));
     }
+
+    @Test
+    void tripInviteFallsBackToPlanWhenNoStoredDeepLink() {
+        UUID tripId = UUID.randomUUID();
+        assertEquals(
+                "/plan/" + tripId,
+                NotificationDeepLinks.resolve(NotificationKind.TRIP_INVITE, "TRIP", tripId));
+    }
 }

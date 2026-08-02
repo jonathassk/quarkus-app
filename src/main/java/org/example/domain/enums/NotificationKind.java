@@ -5,6 +5,7 @@ package org.example.domain.enums;
  */
 public enum NotificationKind {
     TRIP_SHARED,
+    TRIP_INVITE,
     TRIP_COMMENT,
     CHAT_MESSAGE,
     EVENT_RSVP,

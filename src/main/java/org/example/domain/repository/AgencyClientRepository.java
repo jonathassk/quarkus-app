@@ -30,7 +30,7 @@ public class AgencyClientRepository implements PanacheRepositoryBase<AgencyClien
         }
         String like = "%" + q.trim().toLowerCase() + "%";
         return find(
-                        "agency.id = ?1 AND (lower(name) LIKE ?2 OR lower(email) LIKE ?2 OR lower(coalesce(phone,'')) LIKE ?2) ORDER BY name ASC",
+                        "agency.id = ?1 AND (lower(name) LIKE ?2 OR lower(coalesce(email,'')) LIKE ?2 OR lower(coalesce(phone,'')) LIKE ?2) ORDER BY name ASC",
                         agencyId,
                         like)
                 .page(safePage, safeSize)
@@ -43,7 +43,7 @@ public class AgencyClientRepository implements PanacheRepositoryBase<AgencyClien
         }
         String like = "%" + q.trim().toLowerCase() + "%";
         return count(
-                "agency.id = ?1 AND (lower(name) LIKE ?2 OR lower(email) LIKE ?2 OR lower(coalesce(phone,'')) LIKE ?2)",
+                "agency.id = ?1 AND (lower(name) LIKE ?2 OR lower(coalesce(email,'')) LIKE ?2 OR lower(coalesce(phone,'')) LIKE ?2)",
                 agencyId,
                 like);
     }

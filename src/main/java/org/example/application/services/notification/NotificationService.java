@@ -100,6 +100,23 @@ public class NotificationService {
             String entityType,
             UUID entityId,
             boolean sendEmail) {
+        return create(userId, kind, title, body, entityType, entityId, sendEmail, null);
+    }
+
+    /**
+     * @param deepLinkOverride deep link relativo opcional (ex.: {@code /invites/abc}). Quando
+     *     informado, tem prioridade sobre o resolvido por kind/entity.
+     */
+    @Transactional
+    public NotificationDTO create(
+            UUID userId,
+            NotificationKind kind,
+            String title,
+            String body,
+            String entityType,
+            UUID entityId,
+            boolean sendEmail,
+            String deepLinkOverride) {
         if (userId == null || kind == null) {
             return null;
         }
@@ -113,6 +130,10 @@ public class NotificationService {
         NotificationDTO dto = null;
 
         if (prefs.isInAppNotifications()) {
+            String storedDeepLink =
+                    deepLinkOverride != null && !deepLinkOverride.isBlank()
+                            ? truncate(deepLinkOverride.trim(), 512)
+                            : null;
             Notification notification =
                     Notification.builder()
                             .user(user)
@@ -121,6 +142,7 @@ public class NotificationService {
                             .body(body)
                             .entityType(entityType)
                             .entityId(entityId)
+                            .deepLink(storedDeepLink)
                             .build();
             notificationRepository.persist(notification);
             dto = toDto(notification);
@@ -227,6 +249,10 @@ public class NotificationService {
     }
 
     NotificationDTO toDto(Notification n) {
+        String deepLink = n.getDeepLink();
+        if (deepLink == null || deepLink.isBlank()) {
+            deepLink = NotificationDeepLinks.resolve(n.getKind(), n.getEntityType(), n.getEntityId());
+        }
         return NotificationDTO.builder()
                 .id(n.id)
                 .kind(n.getKind())
@@ -234,7 +260,7 @@ public class NotificationService {
                 .body(n.getBody())
                 .entityType(n.getEntityType())
                 .entityId(n.getEntityId())
-                .deepLink(NotificationDeepLinks.resolve(n.getKind(), n.getEntityType(), n.getEntityId()))
+                .deepLink(deepLink)
                 .readAt(n.getReadAt())
                 .createdAt(n.getCreatedAt())
                 .build();
