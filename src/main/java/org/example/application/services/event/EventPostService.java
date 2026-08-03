@@ -10,18 +10,27 @@ import org.example.domain.entity.event.Event;
 import org.example.domain.entity.event.EventPost;
 import org.example.domain.entity.event.EventPostComment;
 import org.example.domain.entity.event.EventPostLike;
+import org.example.domain.entity.event.EventPostPollVote;
 import org.example.domain.repository.UserRepository;
 import org.example.domain.repository.event.EventPostCommentRepository;
 import org.example.domain.repository.event.EventPostRepository;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
 @RequiredArgsConstructor
 public class EventPostService {
+
+    private static final int MIN_POLL_OPTIONS = 2;
+    private static final int MAX_POLL_OPTIONS = 6;
+    private static final int MAX_POLL_OPTION_LENGTH = 120;
+    private static final int MAX_LOCATION_LENGTH = 300;
 
     private final EventPostRepository postRepository;
     private final EventPostCommentRepository commentRepository;
@@ -68,6 +77,13 @@ public class EventPostService {
             validationUtils.validateImageUrl(request.getImageUrl());
         }
 
+        String location = null;
+        if (request.getLocation() != null && !request.getLocation().isBlank()) {
+            location = validationUtils.sanitizeText(request.getLocation(), MAX_LOCATION_LENGTH);
+        }
+
+        List<String> pollOptions = normalizePollOptions(request.getPollOptions());
+
         User author = userRepository.findById(userId);
         EventPost post =
                 EventPost.builder()
@@ -75,9 +91,47 @@ public class EventPostService {
                         .author(author)
                         .text(text)
                         .imageUrl(request.getImageUrl())
-                        .location(request.getLocation())
+                        .location(location)
+                        .pollOptions(pollOptions)
                         .build();
         postRepository.persist(post);
+        return toPostResponse(post, userId);
+    }
+
+    @Transactional
+    public EventPostResponseDTO votePoll(
+            UUID eventId, UUID postId, VoteEventPostPollRequestDTO request, UUID userId) {
+        authorizationService.assertCanView(eventId, userId);
+        EventPost post =
+                postRepository
+                        .findActiveById(postId)
+                        .filter(p -> p.getEvent().getId().equals(eventId))
+                        .orElseThrow(EventException::notFound);
+
+        List<String> options = post.getPollOptions();
+        if (options == null || options.isEmpty()) {
+            throw EventException.validation("Post does not have a poll");
+        }
+        if (request == null || request.getOptionIndex() == null) {
+            throw EventException.validation("optionIndex is required");
+        }
+        int optionIndex = request.getOptionIndex();
+        if (optionIndex < 0 || optionIndex >= options.size()) {
+            throw EventException.validation("Invalid poll option");
+        }
+
+        EventPostPollVote vote =
+                postRepository
+                        .findPollVote(postId, userId)
+                        .orElseGet(
+                                () ->
+                                        EventPostPollVote.builder()
+                                                .postId(postId)
+                                                .userId(userId)
+                                                .build());
+        vote.setOptionIndex(optionIndex);
+        postRepository.getEntityManager().persist(vote);
+
         return toPostResponse(post, userId);
     }
 
@@ -182,6 +236,32 @@ public class EventPostService {
         commentRepository.persist(comment);
     }
 
+    private List<String> normalizePollOptions(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String option : raw) {
+            if (option == null || option.isBlank()) {
+                continue;
+            }
+            String cleaned = validationUtils.sanitizeText(option, MAX_POLL_OPTION_LENGTH);
+            if (cleaned != null && !cleaned.isBlank()) {
+                unique.add(cleaned);
+            }
+        }
+        if (unique.isEmpty()) {
+            return null;
+        }
+        if (unique.size() < MIN_POLL_OPTIONS) {
+            throw EventException.validation("Poll requires at least " + MIN_POLL_OPTIONS + " options");
+        }
+        if (unique.size() > MAX_POLL_OPTIONS) {
+            throw EventException.validation("Poll allows at most " + MAX_POLL_OPTIONS + " options");
+        }
+        return new ArrayList<>(unique);
+    }
+
     private EventPostResponseDTO toPostResponse(EventPost post, UUID userId) {
         UUID postId = post.getId();
         return EventPostResponseDTO.builder()
@@ -192,10 +272,41 @@ public class EventPostService {
                 .text(post.getText())
                 .imageUrl(post.getImageUrl())
                 .location(post.getLocation())
+                .poll(toPollDto(post, userId))
                 .postedAt(post.getPostedAt())
                 .likeCount(postRepository.countLikes(postId))
                 .commentCount(postRepository.countComments(postId))
                 .likedByMe(postRepository.isLikedByUser(postId, userId))
+                .build();
+    }
+
+    private EventPostPollDTO toPollDto(EventPost post, UUID userId) {
+        List<String> options = post.getPollOptions();
+        if (options == null || options.isEmpty()) {
+            return null;
+        }
+        Map<Integer, Long> counts = postRepository.countPollVotesByOption(post.getId());
+        List<EventPostPollOptionDTO> optionDtos = new ArrayList<>(options.size());
+        long total = 0;
+        for (int i = 0; i < options.size(); i++) {
+            long voteCount = counts.getOrDefault(i, 0L);
+            total += voteCount;
+            optionDtos.add(
+                    EventPostPollOptionDTO.builder()
+                            .index(i)
+                            .text(options.get(i))
+                            .voteCount(voteCount)
+                            .build());
+        }
+        Integer myVote =
+                postRepository
+                        .findPollVote(post.getId(), userId)
+                        .map(EventPostPollVote::getOptionIndex)
+                        .orElse(null);
+        return EventPostPollDTO.builder()
+                .options(optionDtos)
+                .totalVotes(total)
+                .myVoteIndex(myVote)
                 .build();
     }
 

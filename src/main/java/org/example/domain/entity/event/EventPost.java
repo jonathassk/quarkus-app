@@ -4,9 +4,12 @@ import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.entity.User;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -39,6 +42,10 @@ public class EventPost extends PanacheEntityBase {
 
     @Column(length = 300)
     private String location;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "poll_options", columnDefinition = "jsonb")
+    private List<String> pollOptions;
 
     @Column(name = "posted_at", nullable = false, updatable = false)
     private Instant postedAt;

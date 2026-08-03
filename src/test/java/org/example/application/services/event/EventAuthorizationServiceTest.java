@@ -104,4 +104,27 @@ class EventAuthorizationServiceTest {
 
         assertFalse(authorizationService.canPost(event, guestUserId));
     }
+
+    @Test
+    void acceptedGuestCanPostOnCompletedEvent() {
+        event.setStatus(EventStatus.COMPLETED);
+        when(participantRepository.isOrganizer(eventId, guestUserId)).thenReturn(false);
+        when(participantRepository.findByEventAndUser(eventId, guestUserId))
+                .thenReturn(
+                        Optional.of(
+                                EventParticipant.builder()
+                                        .role(EventParticipantRole.GUEST)
+                                        .status(EventParticipantStatus.ACCEPTED)
+                                        .build()));
+
+        assertTrue(authorizationService.canPost(event, guestUserId));
+    }
+
+    @Test
+    void cannotPostOnCancelledEvent() {
+        event.setStatus(EventStatus.CANCELLED);
+        when(participantRepository.isOrganizer(eventId, organizerUserId)).thenReturn(true);
+
+        assertFalse(authorizationService.canPost(event, organizerUserId));
+    }
 }

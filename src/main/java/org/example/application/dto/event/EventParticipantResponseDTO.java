@@ -16,7 +16,10 @@ import org.example.domain.enums.EventParticipantStatus;
 public class EventParticipantResponseDTO {
     private UUID userId;
     private String fullName;
+    private String username;
     private String profilePictureUrl;
+    /** País/nacionalidade do usuário (campo `users.country`). */
+    private String country;
     private EventParticipantRole role;
     private EventParticipantStatus status;
 }

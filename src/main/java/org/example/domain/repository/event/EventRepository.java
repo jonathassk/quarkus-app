@@ -96,6 +96,45 @@ public class EventRepository implements PanacheRepositoryBase<Event, UUID> {
         return query.getResultList();
     }
 
+    /**
+     * Lista públicos ordenados por distância (Haversine). Eventos sem coordenadas ficam no fim.
+     * Cursor temporal não se aplica neste modo — busca um recorte maior e ordena em memória.
+     */
+    public List<Event> findPublicEventsNear(
+            String city, Instant from, Instant to, int limit, double lat, double lng) {
+        int fetchLimit = Math.min(Math.max(limit * 10, 200), 500);
+        List<Event> events = findPublicEvents(city, from, to, fetchLimit, null, null);
+        events.sort(
+                java.util.Comparator
+                        .comparing(
+                                (Event e) -> distanceKm(lat, lng, e.getLocationLatitude(), e.getLocationLongitude()),
+                                java.util.Comparator.nullsLast(Double::compareTo))
+                        .thenComparing(Event::getStartAt)
+                        .thenComparing(Event::getId));
+        if (events.size() > limit) {
+            return events.subList(0, limit);
+        }
+        return events;
+    }
+
+    /** Distância em km; {@code null} se o evento não tiver coordenadas. */
+    static Double distanceKm(double lat, double lng, Double eventLat, Double eventLng) {
+        if (eventLat == null || eventLng == null) {
+            return null;
+        }
+        double earthRadiusKm = 6371.0;
+        double dLat = Math.toRadians(eventLat - lat);
+        double dLng = Math.toRadians(eventLng - lng);
+        double a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                        + Math.cos(Math.toRadians(lat))
+                                * Math.cos(Math.toRadians(eventLat))
+                                * Math.sin(dLng / 2)
+                                * Math.sin(dLng / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadiusKm * c;
+    }
+
     public int markCompletedPastEvents(Instant now) {
         return update(
                 "status = ?1 where status = ?2 and endAt is not null and endAt < ?3",

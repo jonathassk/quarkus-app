@@ -76,7 +76,9 @@ public class EventMapper {
         return EventParticipantResponseDTO.builder()
                 .userId(user.id)
                 .fullName(user.getFullName())
+                .username(user.getUsername())
                 .profilePictureUrl(user.getProfilePictureUrl())
+                .country(user.getCountry())
                 .role(participant.getRole())
                 .status(participant.getStatus())
                 .build();

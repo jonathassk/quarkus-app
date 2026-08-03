@@ -130,13 +130,23 @@ public class EventController {
             @QueryParam("to") String to,
             @QueryParam("limit") Integer limit,
             @QueryParam("cursor") String cursor,
+            @QueryParam("lat") Double lat,
+            @QueryParam("lng") Double lng,
+            @QueryParam("sort") String sort,
             @Context HttpHeaders headers) {
         return withAuth(
                 headers,
                 userId ->
                         Response.ok(
                                         eventService.listPublic(
-                                                city, parseInstant(from), parseInstant(to), cursor, limit))
+                                                city,
+                                                parseInstant(from),
+                                                parseInstant(to),
+                                                cursor,
+                                                limit,
+                                                lat,
+                                                lng,
+                                                sort))
                                 .build());
     }
 

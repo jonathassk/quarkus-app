@@ -216,27 +216,59 @@ public class EventService {
     }
 
     @Transactional
-    public PublicEventsPageDTO listPublic(String city, Instant from, Instant to, String cursor, Integer limit) {
+    public PublicEventsPageDTO listPublic(
+            String city,
+            Instant from,
+            Instant to,
+            String cursor,
+            Integer limit,
+            Double lat,
+            Double lng,
+            String sort) {
         assertEnabled();
         eventRepository.markCompletedPastEvents(Instant.now());
 
         int pageSize = limit != null && limit > 0 ? Math.min(limit, publicPageSize) : publicPageSize;
-        EventMapper.Cursor decoded = eventMapper.decodeCursor(cursor);
+        boolean hasCoords =
+                lat != null
+                        && lng != null
+                        && Double.isFinite(lat)
+                        && Double.isFinite(lng)
+                        && lat >= -90
+                        && lat <= 90
+                        && lng >= -180
+                        && lng <= 180;
+        String sortKey = sort != null ? sort.trim() : "";
+        boolean sortByDistance =
+                hasCoords && !"startAt".equalsIgnoreCase(sortKey);
 
-        List<Event> events =
-                eventRepository.findPublicEvents(
-                        city,
-                        from,
-                        to,
-                        pageSize + 1,
-                        decoded != null ? decoded.timestamp() : null,
-                        decoded != null ? decoded.id() : null);
-
+        List<Event> events;
         String nextToken = null;
-        if (events.size() > pageSize) {
-            Event last = events.get(pageSize - 1);
-            nextToken = eventMapper.encodeCursor(last.getStartAt(), last.getId());
-            events = events.subList(0, pageSize);
+
+        if (sortByDistance) {
+            events =
+                    eventRepository.findPublicEventsNear(
+                            city, from, to, pageSize + 1, lat, lng);
+            if (events.size() > pageSize) {
+                events = events.subList(0, pageSize);
+            }
+            // Cursor temporal não combina com ordenação por distância nesta versão.
+        } else {
+            EventMapper.Cursor decoded = eventMapper.decodeCursor(cursor);
+            events =
+                    eventRepository.findPublicEvents(
+                            city,
+                            from,
+                            to,
+                            pageSize + 1,
+                            decoded != null ? decoded.timestamp() : null,
+                            decoded != null ? decoded.id() : null);
+
+            if (events.size() > pageSize) {
+                Event last = events.get(pageSize - 1);
+                nextToken = eventMapper.encodeCursor(last.getStartAt(), last.getId());
+                events = events.subList(0, pageSize);
+            }
         }
 
         List<EventResponseDTO> items =

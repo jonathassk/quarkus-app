@@ -13,6 +13,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.dto.event.CreateEventPostCommentRequestDTO;
 import org.example.application.dto.event.CreateEventPostRequestDTO;
+import org.example.application.dto.event.VoteEventPostPollRequestDTO;
 import org.example.application.services.TokenService;
 import org.example.application.services.event.EventAuthorizationService;
 import org.example.application.services.event.EventPostService;
@@ -54,6 +55,7 @@ public class EventPostController {
 
     @POST
     @Path("/{id}/posts/image-upload-request")
+    @Transactional
     @Operation(
             summary = "Solicitar upload de imagem do post",
             description = "Gera URL presignada R2 para imagem da timeline. Apenas imagens (JPEG, PNG, WebP, GIF).")
@@ -163,6 +165,19 @@ public class EventPostController {
     public Response likePost(
             @PathParam("id") UUID id, @PathParam("postId") UUID postId, @Context HttpHeaders headers) {
         return withAuth(headers, userId -> Response.ok(eventPostService.likePost(id, postId, userId)).build());
+    }
+
+    @POST
+    @Path("/{id}/posts/{postId}/poll/votes")
+    @Transactional
+    @Operation(summary = "Votar em enquete do post")
+    public Response votePoll(
+            @PathParam("id") UUID id,
+            @PathParam("postId") UUID postId,
+            VoteEventPostPollRequestDTO body,
+            @Context HttpHeaders headers) {
+        return withAuth(
+                headers, userId -> Response.ok(eventPostService.votePoll(id, postId, body, userId)).build());
     }
 
     @GET

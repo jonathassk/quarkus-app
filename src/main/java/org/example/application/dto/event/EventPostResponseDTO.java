@@ -20,6 +20,7 @@ public class EventPostResponseDTO {
     private String text;
     private String imageUrl;
     private String location;
+    private EventPostPollDTO poll;
     private Instant postedAt;
     private long likeCount;
     private long commentCount;

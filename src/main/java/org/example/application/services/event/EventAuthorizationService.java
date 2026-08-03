@@ -80,7 +80,9 @@ public class EventAuthorizationService {
     }
 
     public boolean canPost(Event event, UUID userId) {
-        if (event.getStatus() != EventStatus.PUBLISHED) {
+        // Allow timeline posts while the event is live or after it ends (photos/recap).
+        // CANCELLED / DRAFT remain blocked.
+        if (event.getStatus() != EventStatus.PUBLISHED && event.getStatus() != EventStatus.COMPLETED) {
             return false;
         }
         if (isOrganizer(event, userId)) {
