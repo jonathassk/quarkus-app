@@ -3,6 +3,7 @@ package org.example.application.dto.agency;
 import lombok.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +21,16 @@ public class AgencyClientDTO {
     private UUID userId;
     private Instant createdAt;
     private Instant updatedAt;
+
+    private String birthPlace;
+    private String nationality;
+    private String documentNumber;
+    private String documentType;
+    private LocalDate documentIssuedAt;
+    private LocalDate documentExpiresAt;
+    private LocalDate birthDate;
+    private String gender;
+
     /** Preenchido na ficha 360. */
     private List<ClientTripSummaryDTO> trips;
     private long tripCount;

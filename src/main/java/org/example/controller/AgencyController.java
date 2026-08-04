@@ -250,10 +250,12 @@ public class AgencyController {
 
     @GET
     @Path("/analytics")
-    @Operation(summary = "BI: conversão, destinos e faturamento previsto")
-    public Response analytics(@Context HttpHeaders headers) {
+    @Operation(summary = "BI: conversão, destinos, margem e leaderboard da equipe")
+    public Response analytics(
+            @Context HttpHeaders headers,
+            @QueryParam("period") String period) {
         return withUser(headers, userId ->
-                Response.ok(proposalService.analytics(userId)).build());
+                Response.ok(proposalService.analytics(userId, period)).build());
     }
 
     private Response withUser(HttpHeaders headers, java.util.function.Function<UUID, Response> action) {

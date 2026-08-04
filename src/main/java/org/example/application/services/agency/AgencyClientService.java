@@ -67,6 +67,14 @@ public class AgencyClientService {
                 .phone(blankToNull(request.getPhone()))
                 .notes(blankToNull(request.getNotes()))
                 .tags(blankToNull(request.getTags()))
+                .birthPlace(blankToNull(request.getBirthPlace()))
+                .nationality(blankToNull(request.getNationality()))
+                .documentNumber(blankToNull(request.getDocumentNumber()))
+                .documentType(blankToNull(request.getDocumentType()))
+                .documentIssuedAt(parseDate(request.getDocumentIssuedAt()))
+                .documentExpiresAt(parseDate(request.getDocumentExpiresAt()))
+                .birthDate(parseDate(request.getBirthDate()))
+                .gender(blankToNull(request.getGender()))
                 .user(resolvePlatformUser(email))
                 .build();
         clientRepository.persist(client);
@@ -101,6 +109,30 @@ public class AgencyClientService {
         }
         if (request.getTags() != null) {
             client.setTags(blankToNull(request.getTags()));
+        }
+        if (request.getBirthPlace() != null) {
+            client.setBirthPlace(blankToNull(request.getBirthPlace()));
+        }
+        if (request.getNationality() != null) {
+            client.setNationality(blankToNull(request.getNationality()));
+        }
+        if (request.getDocumentNumber() != null) {
+            client.setDocumentNumber(blankToNull(request.getDocumentNumber()));
+        }
+        if (request.getDocumentType() != null) {
+            client.setDocumentType(blankToNull(request.getDocumentType()));
+        }
+        if (request.getDocumentIssuedAt() != null) {
+            client.setDocumentIssuedAt(parseDate(request.getDocumentIssuedAt()));
+        }
+        if (request.getDocumentExpiresAt() != null) {
+            client.setDocumentExpiresAt(parseDate(request.getDocumentExpiresAt()));
+        }
+        if (request.getBirthDate() != null) {
+            client.setBirthDate(parseDate(request.getBirthDate()));
+        }
+        if (request.getGender() != null) {
+            client.setGender(blankToNull(request.getGender()));
         }
         clientRepository.persist(client);
         return toDto(client, true);
@@ -197,9 +229,32 @@ public class AgencyClientService {
                 .userId(client.getUser() != null ? client.getUser().id : null)
                 .createdAt(client.getCreatedAt())
                 .updatedAt(client.getUpdatedAt())
+                .birthPlace(client.getBirthPlace())
+                .nationality(client.getNationality())
+                .documentNumber(client.getDocumentNumber())
+                .documentType(client.getDocumentType())
+                .documentIssuedAt(client.getDocumentIssuedAt())
+                .documentExpiresAt(client.getDocumentExpiresAt())
+                .birthDate(client.getBirthDate())
+                .gender(client.getGender())
                 .trips(trips)
                 .tripCount(tripCount)
                 .build();
+    }
+
+    private static java.time.LocalDate parseDate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 10) {
+            trimmed = trimmed.substring(0, 10);
+        }
+        try {
+            return java.time.LocalDate.parse(trimmed);
+        } catch (Exception e) {
+            throw new BadRequestException("invalid date: " + value);
+        }
     }
 
     private static String blankToNull(String value) {

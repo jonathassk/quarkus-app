@@ -4,6 +4,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @Builder
@@ -31,6 +32,26 @@ public class AgencyAnalyticsDTO {
     private BigDecimal avgPackagePrice;
     private List<DestinationStat> topDestinations;
 
+    /** Período aplicado: ALL | MONTH | QUARTER | YEAR */
+    private String period;
+    /** Variação % do volume vs período anterior (null se sem base). */
+    private Double grossVolumeDeltaPct;
+    /** Variação % da margem vs período anterior. */
+    private Double estimatedMarginDeltaPct;
+    /** Variação em pontos percentuais da conversão vs período anterior. */
+    private Double conversionRateDeltaPts;
+    private BigDecimal previousGrossVolume;
+    private BigDecimal previousEstimatedMargin;
+    private Double previousConversionRate;
+    private Double previousAvgMarginPercentage;
+
+    /** Ranking por margem líquida % (não só volume/frequência). */
+    private List<DestinationStat> destinationsByMargin;
+
+    /** Leaderboard da equipe — só preenchido para OWNER com >1 membro. */
+    private boolean showTeamLeaderboard;
+    private List<ConsultantStat> teamLeaderboard;
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -38,5 +59,24 @@ public class AgencyAnalyticsDTO {
     public static class DestinationStat {
         private String cityOrName;
         private long count;
+        private BigDecimal volume;
+        private BigDecimal margin;
+        /** Margem líquida % sobre o custo base. */
+        private Double marginPercentage;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ConsultantStat {
+        private UUID consultantId;
+        private String consultantName;
+        private long proposalsHandled;
+        private long proposalsWon;
+        private double conversionRate;
+        private BigDecimal volume;
+        private BigDecimal margin;
+        private Double marginPercentage;
     }
 }

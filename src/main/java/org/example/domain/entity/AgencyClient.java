@@ -6,6 +6,7 @@ import lombok.*;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Getter
@@ -42,6 +43,30 @@ public class AgencyClient extends PanacheEntityBase {
     /** Tags separadas por vírgula. */
     @Column(columnDefinition = "TEXT")
     private String tags;
+
+    @Column(name = "birth_place", length = 255)
+    private String birthPlace;
+
+    @Column(length = 128)
+    private String nationality;
+
+    @Column(name = "document_number", length = 64)
+    private String documentNumber;
+
+    @Column(name = "document_type", length = 32)
+    private String documentType;
+
+    @Column(name = "document_issued_at")
+    private LocalDate documentIssuedAt;
+
+    @Column(name = "document_expires_at")
+    private LocalDate documentExpiresAt;
+
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
+
+    @Column(length = 32)
+    private String gender;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")

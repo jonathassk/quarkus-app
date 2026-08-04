@@ -640,75 +640,34 @@ public class ProposalService {
         return listPipeline(userId, null, null, null, 0, 100).getItems();
     }
 
+    /** Compat: analytics sem filtro de período (todo o histórico). */
     @Transactional
     public AgencyAnalyticsDTO analytics(UUID userId) {
-        // Qualquer membro da agência vê o BI do portal /business.
+        return analytics(userId, "ALL");
+    }
+
+    /**
+     * BI da agência com recorte temporal.
+     *
+     * @param period ALL | MONTH | QUARTER | YEAR
+     */
+    @Transactional
+    public AgencyAnalyticsDTO analytics(UUID userId, String period) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         UUID agencyId = member.getAgency().id;
-        List<Trip> trips = tripRepository.findByAgencyId(agencyId);
+        String normalizedPeriod = normalizeAnalyticsPeriod(period);
 
-        long draft = 0, sent = 0, approved = 0, rejected = 0, lost = 0, pendingPayment = 0, confirmed = 0;
-        BigDecimal forecast = BigDecimal.ZERO;
-        BigDecimal marginSum = BigDecimal.ZERO;
-        BigDecimal baseSumForMarkup = BigDecimal.ZERO;
-        BigDecimal marginSumForMarkup = BigDecimal.ZERO;
-        long pricedVolumeTrips = 0;
-        Map<String, Long> destinations = new LinkedHashMap<>();
+        PeriodWindow current = resolvePeriodWindow(normalizedPeriod, false);
+        PeriodWindow previous = resolvePeriodWindow(normalizedPeriod, true);
 
-        for (Trip t : trips) {
-            ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
-            // Volume financeiro: planejamentos com preço definido (ativos no funil).
-            // Recusadas/perdidas ficam de fora do faturamento, mas entram nas contagens.
-            boolean countsAsVolume = t.getFinalPrice() != null
-                    && (s == ProposalStatus.DRAFT
-                    || s == ProposalStatus.SENT
-                    || s == ProposalStatus.APPROVED
-                    || s == ProposalStatus.PENDING_PAYMENT
-                    || s == ProposalStatus.CONFIRMED);
-            switch (s) {
-                case DRAFT -> draft++;
-                case SENT -> sent++;
-                case APPROVED -> approved++;
-                case PENDING_PAYMENT -> pendingPayment++;
-                case CONFIRMED -> confirmed++;
-                case REJECTED -> rejected++;
-                case LOST -> lost++;
-            }
-            if (countsAsVolume) {
-                forecast = forecast.add(t.getFinalPrice());
-                pricedVolumeTrips++;
-                if (t.getBaseCost() != null) {
-                    BigDecimal tripMargin = t.getFinalPrice().subtract(t.getBaseCost());
-                    marginSum = marginSum.add(tripMargin);
-                    if (t.getBaseCost().compareTo(BigDecimal.ZERO) > 0) {
-                        baseSumForMarkup = baseSumForMarkup.add(t.getBaseCost());
-                        marginSumForMarkup = marginSumForMarkup.add(tripMargin);
-                    }
-                }
-            }
-            String dest = t.getName() != null ? t.getName() : "—";
-            if (t.getSegments() != null && !t.getSegments().isEmpty()
-                    && t.getSegments().get(0).getCityId() != null) {
-                dest = t.getSegments().get(0).getCityId();
-            }
-            destinations.merge(dest, 1L, Long::sum);
-        }
+        List<Trip> allTrips = tripRepository.findByAgencyId(agencyId);
+        List<Trip> currentTrips = filterTripsByCreatedAt(allTrips, current);
+        List<Trip> previousTrips = "ALL".equals(normalizedPeriod)
+                ? List.of()
+                : filterTripsByCreatedAt(allTrips, previous);
 
-        long conversionDenom = sent + approved + pendingPayment + confirmed + rejected + lost;
-        double conversion = conversionDenom == 0 ? 0.0
-                : ((approved + pendingPayment + confirmed) * 100.0) / conversionDenom;
-
-        BigDecimal avgPackage = pricedVolumeTrips == 0
-                ? BigDecimal.ZERO
-                : forecast.divide(BigDecimal.valueOf(pricedVolumeTrips), 2, RoundingMode.HALF_UP);
-
-        Double avgMarginPct = null;
-        if (baseSumForMarkup.compareTo(BigDecimal.ZERO) > 0) {
-            avgMarginPct = marginSumForMarkup
-                    .multiply(BigDecimal.valueOf(100))
-                    .divide(baseSumForMarkup, 1, RoundingMode.HALF_UP)
-                    .doubleValue();
-        }
+        Metrics currentMetrics = computeMetrics(currentTrips);
+        Metrics previousMetrics = computeMetrics(previousTrips);
 
         List<AgencyClient> agencyClients = agencyClientRepository.findByAgencyId(agencyId);
         long memberClients = 0;
@@ -721,30 +680,362 @@ public class ProposalService {
             }
         }
 
-        List<AgencyAnalyticsDTO.DestinationStat> top = destinations.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(10)
-                .map(e -> AgencyAnalyticsDTO.DestinationStat.builder()
-                        .cityOrName(e.getKey()).count(e.getValue()).build())
-                .toList();
+        List<AgencyMember> team = agencyMemberRepository.findAllByAgency(agencyId);
+        boolean showLeaderboard = member.getAgencyRole() == AgencyRole.AGENCY_OWNER && team.size() > 1;
+        List<AgencyAnalyticsDTO.ConsultantStat> leaderboard = showLeaderboard
+                ? buildTeamLeaderboard(currentTrips)
+                : List.of();
 
         return AgencyAnalyticsDTO.builder()
-                .proposalsDraft(draft)
-                .proposalsSent(sent)
-                .proposalsApproved(approved + pendingPayment + confirmed)
-                .proposalsRejected(rejected)
-                .proposalsLost(lost)
-                .conversionRate(Math.round(conversion * 100.0) / 100.0)
-                .forecastRevenue(forecast)
-                .grossVolume(forecast)
-                .estimatedMargin(marginSum)
-                .avgMarginPercentage(avgMarginPct)
+                .proposalsDraft(currentMetrics.draft)
+                .proposalsSent(currentMetrics.sent)
+                .proposalsApproved(currentMetrics.approved + currentMetrics.pendingPayment + currentMetrics.confirmed)
+                .proposalsRejected(currentMetrics.rejected)
+                .proposalsLost(currentMetrics.lost)
+                .conversionRate(currentMetrics.conversionRate)
+                .forecastRevenue(currentMetrics.volume)
+                .grossVolume(currentMetrics.volume)
+                .estimatedMargin(currentMetrics.margin)
+                .avgMarginPercentage(currentMetrics.avgMarginPct)
                 .activeClients(agencyClients.size())
                 .memberClients(memberClients)
                 .guestClients(guestClients)
-                .avgPackagePrice(avgPackage)
-                .topDestinations(top)
+                .avgPackagePrice(currentMetrics.avgPackage)
+                .topDestinations(currentMetrics.topByCount)
+                .period(normalizedPeriod)
+                .grossVolumeDeltaPct(pctChange(previousMetrics.volume, currentMetrics.volume))
+                .estimatedMarginDeltaPct(pctChange(previousMetrics.margin, currentMetrics.margin))
+                .conversionRateDeltaPts(round1(currentMetrics.conversionRate - previousMetrics.conversionRate))
+                .previousGrossVolume(previousMetrics.volume)
+                .previousEstimatedMargin(previousMetrics.margin)
+                .previousConversionRate(previousMetrics.conversionRate)
+                .previousAvgMarginPercentage(previousMetrics.avgMarginPct)
+                .destinationsByMargin(currentMetrics.topByMargin)
+                .showTeamLeaderboard(showLeaderboard)
+                .teamLeaderboard(leaderboard)
                 .build();
+    }
+
+    private static String normalizeAnalyticsPeriod(String period) {
+        if (period == null || period.isBlank()) {
+            return "ALL";
+        }
+        return switch (period.trim().toUpperCase(Locale.ROOT)) {
+            case "MONTH", "QUARTER", "YEAR", "ALL" -> period.trim().toUpperCase(Locale.ROOT);
+            default -> "ALL";
+        };
+    }
+
+    private record PeriodWindow(Instant start, Instant end) {}
+
+    private PeriodWindow resolvePeriodWindow(String period, boolean previous) {
+        java.time.ZoneId zone = java.time.ZoneId.of("America/Sao_Paulo");
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(zone);
+        java.time.ZonedDateTime start;
+        java.time.ZonedDateTime end;
+
+        switch (period) {
+            case "MONTH" -> {
+                java.time.ZonedDateTime cursor = previous ? now.minusMonths(1) : now;
+                start = cursor.withDayOfMonth(1).toLocalDate().atStartOfDay(zone);
+                end = previous
+                        ? start.plusMonths(1)
+                        : now;
+            }
+            case "QUARTER" -> {
+                int month = now.getMonthValue();
+                int quarterStartMonth = ((month - 1) / 3) * 3 + 1;
+                java.time.ZonedDateTime qStart = now
+                        .withMonth(quarterStartMonth)
+                        .withDayOfMonth(1)
+                        .toLocalDate()
+                        .atStartOfDay(zone);
+                if (previous) {
+                    start = qStart.minusMonths(3);
+                    end = qStart;
+                } else {
+                    start = qStart;
+                    end = now;
+                }
+            }
+            case "YEAR" -> {
+                java.time.ZonedDateTime yStart = now.withDayOfYear(1).toLocalDate().atStartOfDay(zone);
+                if (previous) {
+                    start = yStart.minusYears(1);
+                    end = yStart;
+                } else {
+                    start = yStart;
+                    end = now;
+                }
+            }
+            default -> {
+                // ALL — janela "atual" = tudo; "anterior" vazia
+                start = java.time.Instant.EPOCH.atZone(zone);
+                end = previous ? java.time.Instant.EPOCH.atZone(zone) : now;
+            }
+        }
+        return new PeriodWindow(start.toInstant(), end.toInstant());
+    }
+
+    private static List<Trip> filterTripsByCreatedAt(List<Trip> trips, PeriodWindow window) {
+        if (window == null) {
+            return trips;
+        }
+        // Janela vazia (ex.: previous de ALL)
+        if (!window.start().isBefore(window.end())) {
+            return List.of();
+        }
+        List<Trip> out = new ArrayList<>();
+        for (Trip t : trips) {
+            Instant created = t.getCreatedAt() != null ? t.getCreatedAt() : t.getUpdatedAt();
+            if (created == null) {
+                continue;
+            }
+            if (!created.isBefore(window.start()) && created.isBefore(window.end())) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    private static final class Metrics {
+        long draft, sent, approved, rejected, lost, pendingPayment, confirmed;
+        BigDecimal volume = BigDecimal.ZERO;
+        BigDecimal margin = BigDecimal.ZERO;
+        BigDecimal avgPackage = BigDecimal.ZERO;
+        Double avgMarginPct;
+        double conversionRate;
+        List<AgencyAnalyticsDTO.DestinationStat> topByCount = List.of();
+        List<AgencyAnalyticsDTO.DestinationStat> topByMargin = List.of();
+    }
+
+    private static final class DestAgg {
+        long count;
+        BigDecimal volume = BigDecimal.ZERO;
+        BigDecimal margin = BigDecimal.ZERO;
+        BigDecimal base = BigDecimal.ZERO;
+    }
+
+    private Metrics computeMetrics(List<Trip> trips) {
+        Metrics m = new Metrics();
+        BigDecimal baseSumForMarkup = BigDecimal.ZERO;
+        BigDecimal marginSumForMarkup = BigDecimal.ZERO;
+        long pricedVolumeTrips = 0;
+        Map<String, DestAgg> destinations = new LinkedHashMap<>();
+
+        for (Trip t : trips) {
+            ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
+            boolean countsAsVolume = t.getFinalPrice() != null
+                    && (s == ProposalStatus.DRAFT
+                    || s == ProposalStatus.SENT
+                    || s == ProposalStatus.APPROVED
+                    || s == ProposalStatus.PENDING_PAYMENT
+                    || s == ProposalStatus.CONFIRMED);
+            switch (s) {
+                case DRAFT -> m.draft++;
+                case SENT -> m.sent++;
+                case APPROVED -> m.approved++;
+                case PENDING_PAYMENT -> m.pendingPayment++;
+                case CONFIRMED -> m.confirmed++;
+                case REJECTED -> m.rejected++;
+                case LOST -> m.lost++;
+            }
+
+            String dest = resolveDestination(t);
+            DestAgg agg = destinations.computeIfAbsent(dest, k -> new DestAgg());
+            agg.count++;
+
+            if (countsAsVolume) {
+                m.volume = m.volume.add(t.getFinalPrice());
+                pricedVolumeTrips++;
+                agg.volume = agg.volume.add(t.getFinalPrice());
+                if (t.getBaseCost() != null) {
+                    BigDecimal tripMargin = t.getFinalPrice().subtract(t.getBaseCost());
+                    m.margin = m.margin.add(tripMargin);
+                    agg.margin = agg.margin.add(tripMargin);
+                    if (t.getBaseCost().compareTo(BigDecimal.ZERO) > 0) {
+                        baseSumForMarkup = baseSumForMarkup.add(t.getBaseCost());
+                        marginSumForMarkup = marginSumForMarkup.add(tripMargin);
+                        agg.base = agg.base.add(t.getBaseCost());
+                    }
+                }
+            }
+        }
+
+        long conversionDenom = m.sent + m.approved + m.pendingPayment + m.confirmed + m.rejected + m.lost;
+        m.conversionRate = conversionDenom == 0 ? 0.0
+                : Math.round(((m.approved + m.pendingPayment + m.confirmed) * 10000.0) / conversionDenom) / 100.0;
+
+        m.avgPackage = pricedVolumeTrips == 0
+                ? BigDecimal.ZERO
+                : m.volume.divide(BigDecimal.valueOf(pricedVolumeTrips), 2, RoundingMode.HALF_UP);
+
+        if (baseSumForMarkup.compareTo(BigDecimal.ZERO) > 0) {
+            m.avgMarginPct = marginSumForMarkup
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(baseSumForMarkup, 1, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
+        m.topByCount = destinations.entrySet().stream()
+                .sorted(Map.Entry.<String, DestAgg>comparingByValue(
+                        (a, b) -> Long.compare(b.count, a.count)))
+                .limit(10)
+                .map(e -> toDestinationStat(e.getKey(), e.getValue()))
+                .toList();
+
+        m.topByMargin = destinations.entrySet().stream()
+                .filter(e -> e.getValue().base.compareTo(BigDecimal.ZERO) > 0
+                        || e.getValue().margin.compareTo(BigDecimal.ZERO) != 0)
+                .sorted((a, b) -> {
+                    double pa = marginPct(a.getValue());
+                    double pb = marginPct(b.getValue());
+                    int cmp = Double.compare(pb, pa);
+                    if (cmp != 0) return cmp;
+                    return b.getValue().margin.compareTo(a.getValue().margin);
+                })
+                .limit(10)
+                .map(e -> toDestinationStat(e.getKey(), e.getValue()))
+                .toList();
+
+        return m;
+    }
+
+    private static String resolveDestination(Trip t) {
+        String dest = t.getName() != null ? t.getName() : "—";
+        if (t.getSegments() != null && !t.getSegments().isEmpty()
+                && t.getSegments().get(0).getCityId() != null) {
+            dest = t.getSegments().get(0).getCityId();
+        }
+        return dest;
+    }
+
+    private static double marginPct(DestAgg agg) {
+        if (agg.base.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0.0;
+        }
+        return agg.margin.multiply(BigDecimal.valueOf(100))
+                .divide(agg.base, 1, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private static AgencyAnalyticsDTO.DestinationStat toDestinationStat(String name, DestAgg agg) {
+        Double pct = agg.base.compareTo(BigDecimal.ZERO) > 0 ? marginPct(agg) : null;
+        return AgencyAnalyticsDTO.DestinationStat.builder()
+                .cityOrName(name)
+                .count(agg.count)
+                .volume(agg.volume)
+                .margin(agg.margin)
+                .marginPercentage(pct)
+                .build();
+    }
+
+    private static final class ConsultantAgg {
+        UUID id;
+        String name;
+        long handled;
+        long won;
+        BigDecimal volume = BigDecimal.ZERO;
+        BigDecimal margin = BigDecimal.ZERO;
+        BigDecimal base = BigDecimal.ZERO;
+    }
+
+    private List<AgencyAnalyticsDTO.ConsultantStat> buildTeamLeaderboard(List<Trip> trips) {
+        Map<UUID, ConsultantAgg> byConsultant = new LinkedHashMap<>();
+
+        for (Trip t : trips) {
+            User consultant = t.getAssignedConsultant() != null
+                    ? t.getAssignedConsultant()
+                    : t.getCreatedBy();
+            if (consultant == null || consultant.id == null) {
+                continue;
+            }
+            ConsultantAgg agg = byConsultant.computeIfAbsent(consultant.id, id -> {
+                ConsultantAgg c = new ConsultantAgg();
+                c.id = id;
+                c.name = consultant.getFullName() != null && !consultant.getFullName().isBlank()
+                        ? consultant.getFullName()
+                        : (consultant.getEmail() != null ? consultant.getEmail() : "Consultor");
+                return c;
+            });
+
+            ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
+            boolean inFunnel = s != ProposalStatus.DRAFT;
+            if (inFunnel) {
+                agg.handled++;
+            }
+            if (s == ProposalStatus.APPROVED
+                    || s == ProposalStatus.PENDING_PAYMENT
+                    || s == ProposalStatus.CONFIRMED) {
+                agg.won++;
+            }
+
+            boolean countsAsVolume = t.getFinalPrice() != null
+                    && (s == ProposalStatus.DRAFT
+                    || s == ProposalStatus.SENT
+                    || s == ProposalStatus.APPROVED
+                    || s == ProposalStatus.PENDING_PAYMENT
+                    || s == ProposalStatus.CONFIRMED);
+            if (countsAsVolume) {
+                agg.volume = agg.volume.add(t.getFinalPrice());
+                if (t.getBaseCost() != null) {
+                    BigDecimal tripMargin = t.getFinalPrice().subtract(t.getBaseCost());
+                    agg.margin = agg.margin.add(tripMargin);
+                    if (t.getBaseCost().compareTo(BigDecimal.ZERO) > 0) {
+                        agg.base = agg.base.add(t.getBaseCost());
+                    }
+                }
+            }
+        }
+
+        return byConsultant.values().stream()
+                .sorted((a, b) -> {
+                    int cmp = b.margin.compareTo(a.margin);
+                    if (cmp != 0) return cmp;
+                    double ca = a.handled == 0 ? 0 : (a.won * 100.0) / a.handled;
+                    double cb = b.handled == 0 ? 0 : (b.won * 100.0) / b.handled;
+                    return Double.compare(cb, ca);
+                })
+                .map(agg -> {
+                    double conv = agg.handled == 0 ? 0.0
+                            : Math.round((agg.won * 10000.0) / agg.handled) / 100.0;
+                    Double marginPct = agg.base.compareTo(BigDecimal.ZERO) > 0
+                            ? agg.margin.multiply(BigDecimal.valueOf(100))
+                                    .divide(agg.base, 1, RoundingMode.HALF_UP)
+                                    .doubleValue()
+                            : null;
+                    return AgencyAnalyticsDTO.ConsultantStat.builder()
+                            .consultantId(agg.id)
+                            .consultantName(agg.name)
+                            .proposalsHandled(agg.handled)
+                            .proposalsWon(agg.won)
+                            .conversionRate(conv)
+                            .volume(agg.volume)
+                            .margin(agg.margin)
+                            .marginPercentage(marginPct)
+                            .build();
+                })
+                .toList();
+    }
+
+    private static Double pctChange(BigDecimal previous, BigDecimal current) {
+        if (previous == null || current == null) {
+            return null;
+        }
+        if (previous.compareTo(BigDecimal.ZERO) == 0) {
+            if (current.compareTo(BigDecimal.ZERO) == 0) {
+                return 0.0;
+            }
+            return null;
+        }
+        return current.subtract(previous)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(previous, 1, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private static Double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     private static boolean hasMemberTag(String tags) {
