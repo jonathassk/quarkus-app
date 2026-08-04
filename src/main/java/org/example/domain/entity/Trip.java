@@ -138,6 +138,22 @@ public class Trip extends PanacheEntityBase {
     @Column(name = "proposal_reject_reason", columnDefinition = "TEXT")
     private String proposalRejectReason;
 
+    /** Última abertura da proposta pública pelo cliente. */
+    @Column(name = "proposal_last_viewed_at")
+    private Instant proposalLastViewedAt;
+
+    @Column(name = "proposal_view_count")
+    @Builder.Default
+    private Integer proposalViewCount = 0;
+
+    @Column(name = "proposal_views_today")
+    @Builder.Default
+    private Integer proposalViewsToday = 0;
+
+    /** Dia civil ao qual {@link #proposalViewsToday} se refere. */
+    @Column(name = "proposal_views_day")
+    private LocalDate proposalViewsDay;
+
     /** Cliente CRM da agência (épico 5). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")

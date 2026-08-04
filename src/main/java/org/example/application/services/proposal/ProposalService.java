@@ -31,6 +31,7 @@ import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,10 +86,35 @@ public class ProposalService {
         return new String(buf);
     }
 
+    @Transactional
     public PublicProposalDTO getPublicProposal(String shareCode) {
         Trip trip = tripRepository.findByShareCode(shareCode)
                 .orElseThrow(() -> new NotFoundException("Proposal not found"));
+        recordProposalView(trip);
         return toPublicDto(trip);
+    }
+
+    /**
+     * Contabiliza abertura da proposta pública (badge de atividade no pipeline).
+     * Throttle de 45s evita contagem dupla por remount/prefetch do front.
+     */
+    private void recordProposalView(Trip trip) {
+        Instant now = Instant.now();
+        Instant last = trip.getProposalLastViewedAt();
+        if (last != null && Duration.between(last, now).getSeconds() < 45) {
+            return;
+        }
+        LocalDate today = LocalDate.now();
+        if (trip.getProposalViewsDay() == null || !trip.getProposalViewsDay().equals(today)) {
+            trip.setProposalViewsDay(today);
+            trip.setProposalViewsToday(1);
+        } else {
+            int todayCount = trip.getProposalViewsToday() == null ? 0 : trip.getProposalViewsToday();
+            trip.setProposalViewsToday(todayCount + 1);
+        }
+        int total = trip.getProposalViewCount() == null ? 0 : trip.getProposalViewCount();
+        trip.setProposalViewCount(total + 1);
+        trip.setProposalLastViewedAt(now);
     }
 
     @Transactional
@@ -828,6 +854,10 @@ public class ProposalService {
                 .clientId(t.getClient() != null ? t.getClient().id : null)
                 .clientName(t.getClient() != null ? t.getClient().getName()
                         : t.getProposalClientName())
+                .clientPhone(t.getClient() != null ? t.getClient().getPhone() : null)
+                .proposalLastViewedAt(t.getProposalLastViewedAt())
+                .proposalViewCount(t.getProposalViewCount())
+                .proposalViewsToday(t.getProposalViewsToday())
                 .build();
     }
 

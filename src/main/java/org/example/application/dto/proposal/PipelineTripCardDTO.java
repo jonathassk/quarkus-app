@@ -33,4 +33,8 @@ public class PipelineTripCardDTO {
     private String assignedConsultantName;
     private UUID clientId;
     private String clientName;
+    private String clientPhone;
+    private Instant proposalLastViewedAt;
+    private Integer proposalViewCount;
+    private Integer proposalViewsToday;
 }
