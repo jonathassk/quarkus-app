@@ -155,6 +155,28 @@ public class EventPostService {
     }
 
     @Transactional
+    public EventPostResponseDTO updatePost(
+            UUID eventId, UUID postId, UpdateEventPostRequestDTO request, UUID userId) {
+        authorizationService.assertCanEdit(eventId, userId);
+        EventPost post =
+                postRepository
+                        .findActiveById(postId)
+                        .filter(p -> p.getEvent().getId().equals(eventId))
+                        .orElseThrow(EventException::notFound);
+
+        if (request == null || request.getPinned() == null) {
+            throw EventException.validation("pinned is required");
+        }
+
+        boolean pinned = Boolean.TRUE.equals(request.getPinned());
+        post.setPinned(pinned);
+        post.setPinnedAt(pinned ? Instant.now() : null);
+        post.setUpdatedAt(Instant.now());
+        postRepository.persist(post);
+        return toPostResponse(post, userId);
+    }
+
+    @Transactional
     public EventPostResponseDTO likePost(UUID eventId, UUID postId, UUID userId) {
         authorizationService.assertCanView(eventId, userId);
         EventPost post =
@@ -277,6 +299,8 @@ public class EventPostService {
                 .likeCount(postRepository.countLikes(postId))
                 .commentCount(postRepository.countComments(postId))
                 .likedByMe(postRepository.isLikedByUser(postId, userId))
+                .pinned(post.isPinned())
+                .pinnedAt(post.getPinnedAt())
                 .build();
     }
 

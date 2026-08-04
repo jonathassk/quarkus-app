@@ -25,4 +25,6 @@ public class EventPostResponseDTO {
     private long likeCount;
     private long commentCount;
     private boolean likedByMe;
+    private boolean pinned;
+    private Instant pinnedAt;
 }

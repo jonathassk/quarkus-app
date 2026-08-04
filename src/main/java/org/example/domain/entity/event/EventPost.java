@@ -47,6 +47,13 @@ public class EventPost extends PanacheEntityBase {
     @Column(name = "poll_options", columnDefinition = "jsonb")
     private List<String> pollOptions;
 
+    @Builder.Default
+    @Column(name = "pinned", nullable = false)
+    private boolean pinned = false;
+
+    @Column(name = "pinned_at")
+    private Instant pinnedAt;
+
     @Column(name = "posted_at", nullable = false, updatable = false)
     private Instant postedAt;
 

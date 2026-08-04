@@ -13,6 +13,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.dto.event.CreateEventPostCommentRequestDTO;
 import org.example.application.dto.event.CreateEventPostRequestDTO;
+import org.example.application.dto.event.UpdateEventPostRequestDTO;
 import org.example.application.dto.event.VoteEventPostPollRequestDTO;
 import org.example.application.services.TokenService;
 import org.example.application.services.event.EventAuthorizationService;
@@ -156,6 +157,19 @@ public class EventPostController {
                     eventPostService.deletePost(id, postId, userId);
                     return Response.noContent().build();
                 });
+    }
+
+    @PATCH
+    @Path("/{id}/posts/{postId}")
+    @Transactional
+    @Operation(summary = "Atualizar post (fixar / desfixar)")
+    public Response updatePost(
+            @PathParam("id") UUID id,
+            @PathParam("postId") UUID postId,
+            UpdateEventPostRequestDTO body,
+            @Context HttpHeaders headers) {
+        return withAuth(
+                headers, userId -> Response.ok(eventPostService.updatePost(id, postId, body, userId)).build());
     }
 
     @POST
