@@ -4,19 +4,30 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
+import org.example.application.dto.agency.AddOpportunityActivityRequest;
+import org.example.application.dto.agency.AgencyOpportunityActivityDTO;
 import org.example.application.dto.agency.AgencyOpportunityDTO;
+import org.example.application.dto.agency.DuplicateContactCheckResponse;
+import org.example.application.dto.agency.MarkOpportunityLostRequest;
 import org.example.application.dto.agency.UpsertAgencyOpportunityRequest;
 import org.example.application.services.proposal.ProposalService;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyClient;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.entity.AgencyOpportunity;
+import org.example.domain.entity.AgencyOpportunityActivity;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.User;
 import org.example.domain.entity.Workspace;
 import org.example.domain.entity.WorkspaceMember;
 import org.example.domain.enums.ContactStatus;
+import org.example.domain.enums.AgencyRole;
+import org.example.domain.enums.OpportunityActivityType;
+import org.example.domain.enums.OpportunityLostReasonCode;
+import org.example.domain.enums.OpportunityNextActionType;
+import org.example.domain.enums.OpportunityPriority;
 import org.example.domain.enums.OpportunityStage;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.QualificationStatus;
@@ -24,6 +35,7 @@ import org.example.domain.enums.TripStatus;
 import org.example.domain.enums.WorkspaceRole;
 import org.example.domain.repository.AgencyClientRepository;
 import org.example.domain.repository.AgencyOpportunityRepository;
+import org.example.domain.repository.AgencyOpportunityActivityRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 
@@ -53,6 +65,8 @@ public class AgencyOpportunityService {
     @Inject
     AgencyOpportunityRepository opportunityRepository;
     @Inject
+    AgencyOpportunityActivityRepository activityRepository;
+    @Inject
     AgencyClientRepository clientRepository;
     @Inject
     TripRepository tripRepository;
@@ -76,16 +90,21 @@ public class AgencyOpportunityService {
                 throw new BadRequestException("Invalid stage: " + stage);
             }
         }
+        UUID effectiveConsultantId = member.getAgencyRole() == AgencyRole.AGENCY_CONSULTANT
+                ? null
+                : consultantId;
         return opportunityRepository
-                .search(member.getAgency().id, parsed, consultantId, clientId, q, page, size)
+                .search(member.getAgency().id, parsed, effectiveConsultantId, clientId, q, page, size)
                 .stream()
+                .filter(opp -> member.getAgencyRole() == AgencyRole.AGENCY_OWNER
+                        || isAssignedTo(opp, userId))
                 .map(this::toDto)
                 .toList();
     }
 
     public AgencyOpportunityDTO get(UUID userId, UUID opportunityId) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        return toDto(requireOpportunity(member.getAgency().id, opportunityId));
+        return toDto(requireAccessibleOpportunity(member, userId, opportunityId));
     }
 
     @Transactional
@@ -116,19 +135,26 @@ public class AgencyOpportunityService {
                 .requestSummary(summary)
                 .assignedConsultant(consultant)
                 .nextFollowUpAt(request.getNextFollowUpAt())
+                .priority(parsePriority(request.getPriority()))
+                .lastActivityAt(Instant.now())
                 .leadSource(leadSource)
                 .leadSourceDetail(blankToNull(request.getLeadSourceDetail()))
                 .build();
         applyDetails(opp, request);
+        if (opp.getEstimatedValue() == null) {
+            opp.setEstimatedValue(opp.getBudgetMax() != null ? opp.getBudgetMax() : opp.getBudgetMin());
+        }
         refreshQualification(opp);
         opportunityRepository.persist(opp);
+        recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.CREATED,
+                "Oportunidade criada", null);
         return toDto(opp);
     }
 
     @Transactional
     public AgencyOpportunityDTO update(UUID userId, UUID opportunityId, UpsertAgencyOpportunityRequest request) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        AgencyOpportunity opp = requireOpportunity(member.getAgency().id, opportunityId);
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
         if (request == null) {
             throw new BadRequestException("body is required");
         }
@@ -144,40 +170,78 @@ public class AgencyOpportunityService {
         if (request.getLeadSourceDetail() != null) {
             opp.setLeadSourceDetail(blankToNull(request.getLeadSourceDetail()));
         }
+        boolean assigneeChanged = false;
         if (request.getAssignedConsultantId() != null) {
+            UUID previous = opp.getAssignedConsultant() != null ? opp.getAssignedConsultant().id : null;
             opp.setAssignedConsultant(
                     resolveConsultant(member.getAgency().id, request.getAssignedConsultantId(), userId));
+            assigneeChanged = !request.getAssignedConsultantId().equals(previous);
         }
         if (request.getNextFollowUpAt() != null) {
             opp.setNextFollowUpAt(request.getNextFollowUpAt());
         }
+        OpportunityStage previousStage = opp.getStage();
         if (request.getStage() != null && !request.getStage().isBlank()) {
             applyStage(opp, OpportunityStage.fromString(request.getStage()), request.getLostReason());
         }
         applyDetails(opp, request);
+        User actor = userRepository.findById(userId);
+        if (previousStage != opp.getStage()) {
+            recordActivity(opp, actor, OpportunityActivityType.STAGE_CHANGED,
+                    "Etapa alterada para " + opp.getStage().name(), null);
+        }
+        if (assigneeChanged) {
+            recordActivity(opp, actor, OpportunityActivityType.ASSIGNEE_CHANGED,
+                    "Consultor responsável alterado", null);
+        }
+        if (hasNextActionChange(request)) {
+            recordActivity(opp, actor, OpportunityActivityType.NEXT_ACTION_SET,
+                    "Próxima ação atualizada", opp.getNextActionNote());
+        }
+        if (blankToNull(request.getActivityNote()) != null) {
+            recordActivity(opp, actor, OpportunityActivityType.NOTE, "Nota", request.getActivityNote());
+        }
+        opp.setLastActivityAt(Instant.now());
         refreshQualification(opp);
         opportunityRepository.persist(opp);
         return toDto(opp);
     }
 
     @Transactional
-    public AgencyOpportunityDTO markLost(UUID userId, UUID opportunityId, String reason) {
+    public AgencyOpportunityDTO markLost(UUID userId, UUID opportunityId, MarkOpportunityLostRequest request) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        AgencyOpportunity opp = requireOpportunity(member.getAgency().id, opportunityId);
-        if (reason == null || reason.isBlank()) {
-            throw new BadRequestException("lostReason is required");
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
+        if (request == null) {
+            throw new BadRequestException("body is required");
         }
-        applyStage(opp, OpportunityStage.LOST, reason.trim());
+        OpportunityLostReasonCode code = parseLostReasonCode(request.getLostReasonCode());
+        String reason = blankToNull(request.getLostReason());
+        if (code == null && reason == null) {
+            throw new BadRequestException("lostReasonCode or lostReason is required");
+        }
+        opp.setLostReasonCode(code);
+        opp.setLostReason(reason != null ? reason : code.name());
+        opp.setLostCompetitor(blankToNull(request.getLostCompetitor()));
+        opp.setLostNote(blankToNull(request.getLostNote()));
+        opp.setLostMayReactivate(Boolean.TRUE.equals(request.getLostMayReactivate()));
+        opp.setLostReactivateAt(request.getLostReactivateAt());
+        applyStage(opp, OpportunityStage.LOST, opp.getLostReason());
+        opp.setLastActivityAt(Instant.now());
         opportunityRepository.persist(opp);
+        recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.LOST,
+                "Oportunidade marcada como perdida", opp.getLostReason());
         return toDto(opp);
     }
 
     @Transactional
     public AgencyOpportunityDTO markWon(UUID userId, UUID opportunityId) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        AgencyOpportunity opp = requireOpportunity(member.getAgency().id, opportunityId);
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
         applyStage(opp, OpportunityStage.WON, null);
+        opp.setLastActivityAt(Instant.now());
         opportunityRepository.persist(opp);
+        recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.WON,
+                "Oportunidade marcada como ganha", null);
         return toDto(opp);
     }
 
@@ -187,7 +251,7 @@ public class AgencyOpportunityService {
     @Transactional
     public AgencyOpportunityDTO convertToProposal(UUID userId, UUID opportunityId) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        AgencyOpportunity opp = requireOpportunity(member.getAgency().id, opportunityId);
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
         if (opp.getTrip() != null) {
             return toDto(opp);
         }
@@ -243,7 +307,10 @@ public class AgencyOpportunityService {
             opp.setStage(OpportunityStage.QUOTING);
         }
         refreshQualification(opp);
+        opp.setLastActivityAt(Instant.now());
         opportunityRepository.persist(opp);
+        recordActivity(opp, creator, OpportunityActivityType.PROPOSAL_SENT,
+                "Proposta iniciada", null);
         return toDto(opp);
     }
 
@@ -279,6 +346,28 @@ public class AgencyOpportunityService {
     }
 
     private void applyDetails(AgencyOpportunity opp, UpsertAgencyOpportunityRequest request) {
+        if (request.getPriority() != null) {
+            opp.setPriority(parsePriority(request.getPriority()));
+        }
+        if (request.getEstimatedValue() != null) {
+            opp.setEstimatedValue(request.getEstimatedValue());
+        }
+        if (request.getNextActionType() != null) {
+            opp.setNextActionType(parseNextActionType(request.getNextActionType()));
+        }
+        if (request.getNextActionAt() != null) {
+            opp.setNextActionAt(request.getNextActionAt());
+        }
+        if (request.getNextActionNote() != null) {
+            opp.setNextActionNote(blankToNull(request.getNextActionNote()));
+        }
+        if (request.getNextActionAssigneeId() != null) {
+            opp.setNextActionAssignee(resolveConsultant(
+                    opp.getAgency().id, request.getNextActionAssigneeId(),
+                    opp.getAssignedConsultant() != null
+                            ? opp.getAssignedConsultant().id
+                            : request.getNextActionAssigneeId()));
+        }
         if (request.getPreferredChannel() != null) {
             opp.setPreferredChannel(blankToNull(request.getPreferredChannel()));
         }
@@ -528,10 +617,161 @@ public class AgencyOpportunityService {
         return opp;
     }
 
+    private AgencyOpportunity requireAccessibleOpportunity(
+            AgencyMember member, UUID userId, UUID opportunityId) {
+        AgencyOpportunity opp = requireOpportunity(member.getAgency().id, opportunityId);
+        if (member.getAgencyRole() == AgencyRole.AGENCY_CONSULTANT && !isAssignedTo(opp, userId)) {
+            throw new ForbiddenException("You do not have access to this opportunity");
+        }
+        return opp;
+    }
+
+    private static boolean isAssignedTo(AgencyOpportunity opp, UUID userId) {
+        return (opp.getAssignedConsultant() != null && userId.equals(opp.getAssignedConsultant().id))
+                || (opp.getNextActionAssignee() != null && userId.equals(opp.getNextActionAssignee().id));
+    }
+
+    public List<AgencyOpportunityActivityDTO> listActivities(UUID userId, UUID opportunityId, int limit) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        return activityRepository.listByOpportunity(opportunityId, limit).stream()
+                .map(this::toActivityDto)
+                .toList();
+    }
+
+    @Transactional
+    public AgencyOpportunityActivityDTO addActivity(
+            UUID userId, UUID opportunityId, AddOpportunityActivityRequest request) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
+        if (request == null || request.getActivityType() == null || request.getActivityType().isBlank()) {
+            throw new BadRequestException("activityType is required");
+        }
+        OpportunityActivityType type;
+        try {
+            type = OpportunityActivityType.valueOf(request.getActivityType().trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Invalid activityType: " + request.getActivityType());
+        }
+        if (!List.of(OpportunityActivityType.NOTE, OpportunityActivityType.CALL,
+                OpportunityActivityType.MESSAGE, OpportunityActivityType.TASK,
+                OpportunityActivityType.OTHER).contains(type)) {
+            throw new BadRequestException("Unsupported activityType");
+        }
+        String title = blankToNull(request.getTitle());
+        AgencyOpportunityActivity activity = recordActivity(opp, userRepository.findById(userId), type,
+                title != null ? title : type.name(), blankToNull(request.getBody()));
+        opp.setLastActivityAt(Instant.now());
+        opportunityRepository.persist(opp);
+        return toActivityDto(activity);
+    }
+
+    public DuplicateContactCheckResponse checkDuplicateContacts(UUID userId, String email, String phone) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        String normalizedEmail = normalizeEmail(email);
+        String normalizedPhone = normalizePhone(phone);
+        if (normalizedEmail == null && normalizedPhone == null) {
+            return DuplicateContactCheckResponse.builder().hasMatches(false).matches(List.of()).build();
+        }
+        List<DuplicateContactCheckResponse.Match> matches = clientRepository.findByAgencyId(member.getAgency().id)
+                .stream()
+                .filter(client -> normalizedEmail != null && normalizedEmail.equals(normalizeEmail(client.getEmail()))
+                        || normalizedPhone != null && normalizedPhone.equals(normalizePhone(client.getPhone())))
+                .map(client -> DuplicateContactCheckResponse.Match.builder()
+                        .clientId(client.id)
+                        .name(client.getName())
+                        .email(client.getEmail())
+                        .phone(client.getPhone())
+                        .contactStatus(client.getContactStatus() != null ? client.getContactStatus().name() : null)
+                        .opportunityCount(opportunityRepository.listByClient(member.getAgency().id, client.id).size())
+                        .build())
+                .toList();
+        return DuplicateContactCheckResponse.builder()
+                .hasMatches(!matches.isEmpty())
+                .matches(matches)
+                .build();
+    }
+
+    private AgencyOpportunityActivity recordActivity(
+            AgencyOpportunity opp, User actor, OpportunityActivityType type, String title, String body) {
+        AgencyOpportunityActivity activity = AgencyOpportunityActivity.builder()
+                .opportunity(opp)
+                .agency(opp.getAgency())
+                .actor(actor)
+                .actorLabel(actor != null
+                        ? (actor.getFullName() != null ? actor.getFullName() : actor.getEmail())
+                        : null)
+                .activityType(type)
+                .title(title)
+                .body(body)
+                .build();
+        activityRepository.persist(activity);
+        return activity;
+    }
+
+    private AgencyOpportunityActivityDTO toActivityDto(AgencyOpportunityActivity activity) {
+        User actor = activity.getActor();
+        return AgencyOpportunityActivityDTO.builder()
+                .id(activity.id)
+                .opportunityId(activity.getOpportunity() != null ? activity.getOpportunity().id : null)
+                .activityType(activity.getActivityType().name())
+                .title(activity.getTitle())
+                .body(activity.getBody())
+                .actorUserId(actor != null ? actor.id : null)
+                .actorLabel(activity.getActorLabel())
+                .createdAt(activity.getCreatedAt())
+                .build();
+    }
+
+    private static boolean hasNextActionChange(UpsertAgencyOpportunityRequest request) {
+        return request.getNextActionType() != null || request.getNextActionAt() != null
+                || request.getNextActionNote() != null || request.getNextActionAssigneeId() != null;
+    }
+
+    private static OpportunityPriority parsePriority(String value) {
+        try {
+            return OpportunityPriority.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Invalid priority: " + value);
+        }
+    }
+
+    private static OpportunityNextActionType parseNextActionType(String value) {
+        try {
+            return OpportunityNextActionType.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Invalid nextActionType: " + value);
+        }
+    }
+
+    private static OpportunityLostReasonCode parseLostReasonCode(String value) {
+        try {
+            return OpportunityLostReasonCode.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Invalid lostReasonCode: " + value);
+        }
+    }
+
     private AgencyOpportunityDTO toDto(AgencyOpportunity opp) {
         AgencyClient client = opp.getClient();
         User consultant = opp.getAssignedConsultant();
+        User nextActionAssignee = opp.getNextActionAssignee();
         Trip trip = opp.getTrip();
+        Instant now = Instant.now();
+        boolean terminal = opp.getStage() == OpportunityStage.WON || opp.getStage() == OpportunityStage.LOST;
+        boolean missingNextAction = !terminal && opp.getStage() != OpportunityStage.NEW
+                && opp.getNextActionAt() == null;
+        boolean overdue = !terminal && opp.getNextActionAt() != null
+                && opp.getNextActionAt().isBefore(now);
+        String health = overdue
+                ? "OVERDUE"
+                : !terminal && opp.getLastActivityAt() != null
+                        && opp.getLastActivityAt().isBefore(now.minusSeconds(3 * 24 * 60 * 60))
+                ? "STALE"
+                : trip != null && trip.getProposalLastViewedAt() != null
+                        && trip.getProposalLastViewedAt().isAfter(now.minusSeconds(48 * 60 * 60))
+                ? "VIEWED"
+                : "OK";
         return AgencyOpportunityDTO.builder()
                 .id(opp.id)
                 .agencyId(opp.getAgency() != null ? opp.getAgency().id : null)
@@ -597,7 +837,32 @@ public class AgencyOpportunityService {
                         : QualificationStatus.INSUFFICIENT.name())
                 .readyToQuoteOverride(opp.isReadyToQuoteOverride())
                 .qualification(buildChecklist(opp))
+                .priority(opp.getPriority() != null ? opp.getPriority().name() : OpportunityPriority.MEDIUM.name())
+                .estimatedValue(opp.getEstimatedValue())
+                .lastActivityAt(opp.getLastActivityAt())
+                .nextActionType(opp.getNextActionType() != null ? opp.getNextActionType().name() : null)
+                .nextActionAt(opp.getNextActionAt())
+                .nextActionNote(opp.getNextActionNote())
+                .nextActionAssigneeId(nextActionAssignee != null ? nextActionAssignee.id : null)
+                .nextActionAssigneeName(nextActionAssignee != null
+                        ? (nextActionAssignee.getFullName() != null
+                                ? nextActionAssignee.getFullName()
+                                : nextActionAssignee.getEmail())
+                        : null)
+                .missingNextAction(missingNextAction)
+                .nextActionOverdue(overdue)
+                .proposalCount(trip != null ? 1 : 0)
+                .proposalLastViewedAt(trip != null ? trip.getProposalLastViewedAt() : null)
+                .proposalViewCount(trip != null && trip.getProposalViewCount() != null
+                        ? trip.getProposalViewCount().longValue()
+                        : 0L)
+                .health(health)
                 .lostReason(opp.getLostReason())
+                .lostReasonCode(opp.getLostReasonCode() != null ? opp.getLostReasonCode().name() : null)
+                .lostCompetitor(opp.getLostCompetitor())
+                .lostNote(opp.getLostNote())
+                .lostMayReactivate(opp.isLostMayReactivate())
+                .lostReactivateAt(opp.getLostReactivateAt())
                 .lostAt(opp.getLostAt())
                 .wonAt(opp.getWonAt())
                 .createdAt(opp.getCreatedAt())
@@ -698,6 +963,14 @@ public class AgencyOpportunityService {
             return null;
         }
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizePhone(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String digits = value.replaceAll("\\D", "");
+        return digits.isBlank() ? null : digits;
     }
 
     private static String blankToNull(String value) {

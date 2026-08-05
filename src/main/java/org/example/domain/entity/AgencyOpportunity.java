@@ -186,8 +186,51 @@ public class AgencyOpportunity extends PanacheEntityBase {
     @Builder.Default
     private boolean readyToQuoteOverride = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private org.example.domain.enums.OpportunityPriority priority =
+            org.example.domain.enums.OpportunityPriority.MEDIUM;
+
+    @Column(name = "estimated_value", precision = 14, scale = 2)
+    private BigDecimal estimatedValue;
+
+    @Column(name = "last_activity_at")
+    private Instant lastActivityAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "next_action_type", length = 64)
+    private org.example.domain.enums.OpportunityNextActionType nextActionType;
+
+    @Column(name = "next_action_at")
+    private Instant nextActionAt;
+
+    @Column(name = "next_action_note", columnDefinition = "TEXT")
+    private String nextActionNote;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "next_action_assignee_id")
+    private User nextActionAssignee;
+
     @Column(name = "lost_reason", columnDefinition = "TEXT")
     private String lostReason;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lost_reason_code", length = 64)
+    private org.example.domain.enums.OpportunityLostReasonCode lostReasonCode;
+
+    @Column(name = "lost_competitor", columnDefinition = "TEXT")
+    private String lostCompetitor;
+
+    @Column(name = "lost_note", columnDefinition = "TEXT")
+    private String lostNote;
+
+    @Column(name = "lost_may_reactivate", nullable = false)
+    @Builder.Default
+    private boolean lostMayReactivate = false;
+
+    @Column(name = "lost_reactivate_at")
+    private LocalDate lostReactivateAt;
 
     @Column(name = "lost_at")
     private Instant lostAt;
@@ -206,6 +249,9 @@ public class AgencyOpportunity extends PanacheEntityBase {
         Instant now = Instant.now();
         createdAt = now;
         updatedAt = now;
+        if (lastActivityAt == null) {
+            lastActivityAt = now;
+        }
     }
 
     @PreUpdate

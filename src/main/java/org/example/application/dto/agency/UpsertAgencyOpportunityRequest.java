@@ -75,5 +75,20 @@ public class UpsertAgencyOpportunityRequest {
     private String qualificationStatus;
     private Boolean readyToQuoteOverride;
 
+    private String priority;
+    private BigDecimal estimatedValue;
+    private String nextActionType;
+    private Instant nextActionAt;
+    private String nextActionNote;
+    private UUID nextActionAssigneeId;
+
     private String lostReason;
+    private String lostReasonCode;
+    private String lostCompetitor;
+    private String lostNote;
+    private Boolean lostMayReactivate;
+    private LocalDate lostReactivateAt;
+
+    /** Nota livre registrada na timeline ao salvar. */
+    private String activityNote;
 }

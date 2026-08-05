@@ -331,6 +331,17 @@ public class AgencyController {
                         userId, stage, consultantId, clientId, q, page, size)).build());
     }
 
+    @GET
+    @Path("/opportunities/duplicates")
+    @Operation(summary = "Verificar contatos duplicados na agência")
+    public Response checkOpportunityDuplicates(
+            @QueryParam("email") String email,
+            @QueryParam("phone") String phone,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.checkDuplicateContacts(userId, email, phone)).build());
+    }
+
     @POST
     @Path("/opportunities")
     @Transactional
@@ -352,6 +363,31 @@ public class AgencyController {
             @Context HttpHeaders headers) {
         return withUser(headers, userId ->
                 Response.ok(agencyOpportunityService.get(userId, opportunityId)).build());
+    }
+
+    @GET
+    @Path("/opportunities/{opportunityId}/activities")
+    @Operation(summary = "Listar atividades da oportunidade")
+    public Response listOpportunityActivities(
+            @PathParam("opportunityId") UUID opportunityId,
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.listActivities(userId, opportunityId, limit)).build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/activities")
+    @Transactional
+    @Operation(summary = "Registrar atividade na oportunidade")
+    public Response addOpportunityActivity(
+            @PathParam("opportunityId") UUID opportunityId,
+            AddOpportunityActivityRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.status(Response.Status.CREATED)
+                        .entity(agencyOpportunityService.addActivity(userId, opportunityId, request))
+                        .build());
     }
 
     @PATCH
@@ -378,7 +414,7 @@ public class AgencyController {
                 Response.ok(agencyOpportunityService.markLost(
                         userId,
                         opportunityId,
-                        request != null ? request.getLostReason() : null)).build());
+                        request)).build());
     }
 
     @POST

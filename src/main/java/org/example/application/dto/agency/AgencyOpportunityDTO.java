@@ -71,7 +71,26 @@ public class AgencyOpportunityDTO {
     private String qualificationStatus;
     private Boolean readyToQuoteOverride;
     private QualificationChecklistDTO qualification;
+    private String priority;
+    private BigDecimal estimatedValue;
+    private Instant lastActivityAt;
+    private String nextActionType;
+    private Instant nextActionAt;
+    private String nextActionNote;
+    private UUID nextActionAssigneeId;
+    private String nextActionAssigneeName;
+    private Boolean missingNextAction;
+    private Boolean nextActionOverdue;
+    private Integer proposalCount;
+    private Instant proposalLastViewedAt;
+    private Long proposalViewCount;
+    private String health; // OK | OVERDUE | STALE | VIEWED | WAITING
     private String lostReason;
+    private String lostReasonCode;
+    private String lostCompetitor;
+    private String lostNote;
+    private Boolean lostMayReactivate;
+    private LocalDate lostReactivateAt;
     private Instant lostAt;
     private Instant wonAt;
     private Instant createdAt;
