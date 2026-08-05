@@ -32,7 +32,7 @@ public class AgencyAnalyticsDTO {
     private BigDecimal avgPackagePrice;
     private List<DestinationStat> topDestinations;
 
-    /** Período aplicado: ALL | MONTH | QUARTER | YEAR */
+    /** Período aplicado: ALL | MONTH | QUARTER | YEAR*/
     private String period;
     /** Variação % do volume vs período anterior (null se sem base). */
     private Double grossVolumeDeltaPct;
