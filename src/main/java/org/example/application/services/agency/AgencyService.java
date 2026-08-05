@@ -652,6 +652,15 @@ public class AgencyService {
         if (request == null) {
             throw new BadRequestException("body is required");
         }
+        if (Boolean.TRUE.equals(request.getRestart())) {
+            agency.setOnboardingCompletedAt(null);
+            agency.setOnboardingSkippedAt(null);
+            agency.setOnboardingTripId(null);
+            agency.setOnboardingClientId(null);
+            if (request.getStep() == null || request.getStep().isBlank()) {
+                agency.setOnboardingStep("START");
+            }
+        }
         if (request.getStep() != null && !request.getStep().isBlank()) {
             agency.setOnboardingStep(request.getStep().trim().toUpperCase(Locale.ROOT));
         }

@@ -72,6 +72,13 @@ public class AgencyClient extends PanacheEntityBase {
     @JoinColumn(name = "user_id")
     private User user;
 
+    /** Prospect → Cliente na primeira oportunidade ganha; Inativo quando aplicável. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "contact_status", nullable = false, length = 32)
+    @Builder.Default
+    private org.example.domain.enums.ContactStatus contactStatus =
+            org.example.domain.enums.ContactStatus.PROSPECT;
+
     /** Cliente gerado pelo seed de demonstração do onboarding. */
     @Column(name = "is_demo", nullable = false)
     @Builder.Default

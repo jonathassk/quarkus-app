@@ -16,6 +16,7 @@ import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.services.TokenService;
 import org.example.application.services.agency.AgencyClientService;
 import org.example.application.services.agency.AgencyOnboardingService;
+import org.example.application.services.agency.AgencyOpportunityService;
 import org.example.application.services.agency.AgencyService;
 import org.example.application.services.proposal.ProposalService;
 import org.example.domain.entity.AgencyMember;
@@ -41,6 +42,7 @@ public class AgencyController {
     private final AgencyService agencyService;
     private final AgencyClientService agencyClientService;
     private final AgencyOnboardingService agencyOnboardingService;
+    private final AgencyOpportunityService agencyOpportunityService;
     private final ProposalService proposalService;
     private final ObjectStorageService objectStorageService;
 
@@ -311,6 +313,94 @@ public class AgencyController {
             agencyClientService.delete(userId, clientId);
             return Response.noContent().build();
         });
+    }
+
+    @GET
+    @Path("/opportunities")
+    @Operation(summary = "Listar solicitações/oportunidades da agência")
+    public Response listOpportunities(
+            @QueryParam("stage") String stage,
+            @QueryParam("consultantId") UUID consultantId,
+            @QueryParam("clientId") UUID clientId,
+            @QueryParam("q") String q,
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("100") int size,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.list(
+                        userId, stage, consultantId, clientId, q, page, size)).build());
+    }
+
+    @POST
+    @Path("/opportunities")
+    @Transactional
+    @Operation(summary = "Criar solicitação/oportunidade (cadastro rápido ou completo)")
+    public Response createOpportunity(
+            UpsertAgencyOpportunityRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.status(Response.Status.CREATED)
+                        .entity(agencyOpportunityService.create(userId, request))
+                        .build());
+    }
+
+    @GET
+    @Path("/opportunities/{opportunityId}")
+    @Operation(summary = "Detalhe da solicitação/oportunidade")
+    public Response getOpportunity(
+            @PathParam("opportunityId") UUID opportunityId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.get(userId, opportunityId)).build());
+    }
+
+    @PATCH
+    @Path("/opportunities/{opportunityId}")
+    @Transactional
+    @Operation(summary = "Atualizar solicitação/oportunidade")
+    public Response updateOpportunity(
+            @PathParam("opportunityId") UUID opportunityId,
+            UpsertAgencyOpportunityRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.update(userId, opportunityId, request)).build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/lost")
+    @Transactional
+    @Operation(summary = "Marcar oportunidade como perdida (motivo obrigatório)")
+    public Response markOpportunityLost(
+            @PathParam("opportunityId") UUID opportunityId,
+            MarkOpportunityLostRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.markLost(
+                        userId,
+                        opportunityId,
+                        request != null ? request.getLostReason() : null)).build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/won")
+    @Transactional
+    @Operation(summary = "Marcar oportunidade como ganha (prospect → cliente)")
+    public Response markOpportunityWon(
+            @PathParam("opportunityId") UUID opportunityId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.markWon(userId, opportunityId)).build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/convert")
+    @Transactional
+    @Operation(summary = "Converter solicitação em proposta (Trip) sem redigitar")
+    public Response convertOpportunity(
+            @PathParam("opportunityId") UUID opportunityId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.convertToProposal(userId, opportunityId)).build());
     }
 
     @GET

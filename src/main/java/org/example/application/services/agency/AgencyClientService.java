@@ -12,9 +12,12 @@ import org.example.application.dto.agency.UpsertAgencyClientRequest;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyClient;
 import org.example.domain.entity.AgencyMember;
+import org.example.domain.entity.AgencyOpportunity;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.User;
+import org.example.domain.enums.ContactStatus;
 import org.example.domain.repository.AgencyClientRepository;
+import org.example.domain.repository.AgencyOpportunityRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 
@@ -36,6 +39,8 @@ public class AgencyClientService {
     AgencyService agencyService;
     @Inject
     AgencyClientRepository clientRepository;
+    @Inject
+    AgencyOpportunityRepository opportunityRepository;
     @Inject
     TripRepository tripRepository;
     @Inject
@@ -79,6 +84,7 @@ public class AgencyClientService {
                 .birthDate(parseDate(request.getBirthDate()))
                 .gender(blankToNull(request.getGender()))
                 .user(resolvePlatformUser(email))
+                .contactStatus(ContactStatus.PROSPECT)
                 .build();
         clientRepository.persist(client);
         return toDto(client, false);
@@ -284,7 +290,9 @@ public class AgencyClientService {
                     .collect(Collectors.toList());
         }
         List<AgencyClientDTO.ClientTripSummaryDTO> trips = null;
+        List<AgencyClientDTO.ClientOpportunitySummaryDTO> opportunities = null;
         long tripCount = 0;
+        long opportunityCount = 0;
         if (includeTrips) {
             List<Trip> tripEntities = tripRepository.findByClientId(client.id);
             tripCount = tripEntities.size();
@@ -299,8 +307,21 @@ public class AgencyClientService {
                             .updatedAt(t.getUpdatedAt())
                             .build())
                     .toList();
+            List<AgencyOpportunity> oppEntities =
+                    opportunityRepository.listByClient(client.getAgency().id, client.id);
+            opportunityCount = oppEntities.size();
+            opportunities = oppEntities.stream()
+                    .map(o -> AgencyClientDTO.ClientOpportunitySummaryDTO.builder()
+                            .opportunityId(o.id)
+                            .title(o.getTitle())
+                            .stage(o.getStage() != null ? o.getStage().name() : null)
+                            .tripId(o.getTrip() != null ? o.getTrip().id : null)
+                            .updatedAt(o.getUpdatedAt())
+                            .build())
+                    .toList();
         } else {
             tripCount = tripRepository.count("client.id = ?1", client.id);
+            opportunityCount = opportunityRepository.count("client.id = ?1", client.id);
         }
         return AgencyClientDTO.builder()
                 .id(client.id)
@@ -320,8 +341,13 @@ public class AgencyClientService {
                 .documentExpiresAt(client.getDocumentExpiresAt())
                 .birthDate(client.getBirthDate())
                 .gender(client.getGender())
+                .contactStatus(client.getContactStatus() != null
+                        ? client.getContactStatus().name()
+                        : ContactStatus.PROSPECT.name())
                 .trips(trips)
                 .tripCount(tripCount)
+                .opportunities(opportunities)
+                .opportunityCount(opportunityCount)
                 .build();
     }
 

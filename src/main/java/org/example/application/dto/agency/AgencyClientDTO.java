@@ -31,9 +31,14 @@ public class AgencyClientDTO {
     private LocalDate birthDate;
     private String gender;
 
+    /** PROSPECT | CLIENT | INACTIVE */
+    private String contactStatus;
+
     /** Preenchido na ficha 360. */
     private List<ClientTripSummaryDTO> trips;
     private long tripCount;
+    private List<ClientOpportunitySummaryDTO> opportunities;
+    private long opportunityCount;
 
     @Data
     @Builder
@@ -45,6 +50,18 @@ public class AgencyClientDTO {
         private String proposalStatus;
         private String shareCode;
         private java.math.BigDecimal finalPrice;
+        private Instant updatedAt;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ClientOpportunitySummaryDTO {
+        private UUID opportunityId;
+        private String title;
+        private String stage;
+        private UUID tripId;
         private Instant updatedAt;
     }
 }
