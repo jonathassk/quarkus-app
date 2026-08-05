@@ -252,6 +252,9 @@ public class AgencyOpportunityService {
     public AgencyOpportunityDTO convertToProposal(UUID userId, UUID opportunityId) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
+        // Serializa conversões concorrentes (ex.: loop no front) para 1 Trip só.
+        opportunityRepository.getEntityManager().lock(opp, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        opportunityRepository.getEntityManager().refresh(opp);
         if (opp.getTrip() != null) {
             return toDto(opp);
         }
@@ -298,8 +301,12 @@ public class AgencyOpportunityService {
                 .nextFollowUpAt(opp.getNextFollowUpAt())
                 .segments(new ArrayList<>())
                 .proposalTiers(new ArrayList<>())
+                .users(new ArrayList<>())
                 .build();
         tripRepository.persist(trip);
+        // Mesmo contrato do CreateTrip: criador precisa estar em trip_users,
+        // senão update-trip falha em "Trip must have at least one user".
+        tripRepository.addTripMember(trip, creator, "OWNER");
 
         opp.setTrip(trip);
         if (opp.getStage() == OpportunityStage.NEW

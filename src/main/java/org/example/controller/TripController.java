@@ -370,7 +370,8 @@ public class TripController {
             return denied;
         }
         try {
-            TripDataValidator.validateTripRequest(tripRequest);
+            // users opcional no update — seed de roteiro / edições de segmentos não reenviam membros
+            TripDataValidator.validateTripRequest(tripRequest, false);
             Trip updatedTrip = updateTripUseCase.updateTrip(tripId, tripRequest);
             TripResponseDTO tripResponse =
                     TripMapper.mapToTripResponseDTO(updatedTrip, tripCollaborationService);

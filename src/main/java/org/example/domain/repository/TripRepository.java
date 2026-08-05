@@ -56,6 +56,10 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
     public Trip updateTripUsers(Trip trip, List<User> users, Map<UUID, String> userPermissions) {
         EntityManager em = getEntityManager();
 
+        if (trip.getUsers() == null) {
+            trip.setUsers(new java.util.ArrayList<>());
+        }
+
         Map<UUID, TripUser> currentUsers = trip.getUsers().stream()
             .collect(Collectors.toMap(tu -> tu.getUser().id, tu -> tu));
 

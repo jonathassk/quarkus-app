@@ -5,6 +5,11 @@ import org.example.application.dto.trip.TripSegmentDTO;
 
 public class TripDataValidator {
     public static void validateTripRequest(TripRequestDTO tripRequest) {
+        validateTripRequest(tripRequest, true);
+    }
+
+    /** Update pode omitir `users` (mantém membros atuais). Create exige pelo menos um. */
+    public static void validateTripRequest(TripRequestDTO tripRequest, boolean requireUsers) {
         if (tripRequest.getName() == null || tripRequest.getName().isEmpty()) throw new IllegalArgumentException("Trip name cannot be null or empty.");
         if (tripRequest.getStartDate() != null && tripRequest.getEndDate() != null) {
             if (tripRequest.getStartDate().isAfter(tripRequest.getEndDate())) {
@@ -23,6 +28,12 @@ public class TripDataValidator {
                 if (activity.getName() == null || activity.getName().isEmpty()) throw new IllegalArgumentException("Activity name cannot be null or empty.");
             }
         }
-        if (tripRequest.getUsers() == null || tripRequest.getUsers().isEmpty()) throw new IllegalArgumentException("Trip must have at least one user.");
+        if (requireUsers) {
+            if (tripRequest.getUsers() == null || tripRequest.getUsers().isEmpty()) {
+                throw new IllegalArgumentException("Trip must have at least one user.");
+            }
+        } else if (tripRequest.getUsers() != null && tripRequest.getUsers().isEmpty()) {
+            throw new IllegalArgumentException("Trip must have at least one user.");
+        }
     }
 }
