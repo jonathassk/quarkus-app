@@ -224,6 +224,9 @@ public class ProposalPaymentService {
             return;
         }
         trip.setProposalStatus(ProposalStatus.CONFIRMED);
+        if (trip.getOperationStatus() == null) {
+            trip.setOperationStatus(org.example.domain.enums.OperationStatus.TO_RESERVE);
+        }
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
 

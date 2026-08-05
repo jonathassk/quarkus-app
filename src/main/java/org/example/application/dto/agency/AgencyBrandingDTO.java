@@ -19,6 +19,16 @@ public class AgencyBrandingDTO {
     private BigDecimal markupPercentage;
     private String planType;
     private String agencyRole;
-    /** false no Essencial: proposta pública usa marca Baggagi. */
+    /** true em planos pagos B2B: proposta usa logo/cores da agência. */
     private Boolean whiteLabelEnabled;
+    /** true no Essencial: proposta white-label exibe “Powered by Baggagi”. */
+    private Boolean poweredByBaggagi;
+    private String contactEmail;
+    private String agentTitle;
+    private String agentPhotoUrl;
+    private String websiteOrInstagram;
+    private String pricingModel;
+    private String onboardingStep;
+    private Boolean onboardingCompleted;
+    private Boolean demoDataActive;
 }

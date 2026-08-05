@@ -19,4 +19,9 @@ public class SendProposalRequest {
     private Integer expiresInDays;
     /** Validade absoluta (opcional). */
     private java.time.Instant proposalExpiresAt;
+    /**
+     * Se true, o agente pode mover a proposta para Negociando após o envio.
+     * Default false quando omitido.
+     */
+    private Boolean allowNegotiation;
 }

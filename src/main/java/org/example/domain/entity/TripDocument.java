@@ -37,9 +37,17 @@ public class TripDocument extends PanacheEntityBase {
     @Column(name = "content_type", nullable = false, length = 128)
     private String contentType;
 
-    /** Tamanho do arquivo em bytes (para quota de storage do plano). */
+    /** Tamanho do arquivo em bytes (plaintext — para quota de storage do plano). */
     @Column(name = "size_bytes")
     private Long sizeBytes;
+
+    /**
+     * 0 = legado (bytes em claro no R2); 1 = AES-256-GCM pela API antes do put.
+     * Ver {@link org.example.infrastructure.crypto.DocumentCryptoService}.
+     */
+    @Column(name = "encryption_version", nullable = false)
+    @Builder.Default
+    private int encryptionVersion = 0;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)

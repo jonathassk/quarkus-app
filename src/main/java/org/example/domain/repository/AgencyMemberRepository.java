@@ -31,6 +31,11 @@ public class AgencyMemberRepository implements PanacheRepositoryBase<AgencyMembe
         return list("agency.id", agencyId);
     }
 
+    /** Conta membros com o papel informado (ex.: consultores ativos). */
+    public long countByAgencyAndRole(UUID agencyId, AgencyRole role) {
+        return count("agency.id = ?1 AND agencyRole = ?2", agencyId, role);
+    }
+
     /**
      * Retorna todas as agências às quais um usuário pertence.
      */

@@ -213,6 +213,8 @@ public class ApplicationConfig {
             UserRepository userRepository,
             TokenService tokenService,
             ObjectStorageService objectStorageService,
+            org.example.infrastructure.crypto.DocumentCryptoService documentCryptoService,
+            org.example.infrastructure.storage.DocumentViewAuditService documentViewAuditService,
             B2bAuditService auditService,
             org.example.application.services.entitlement.EntitlementService entitlementService) {
         return new TripDocumentController(
@@ -221,6 +223,8 @@ public class ApplicationConfig {
                 userRepository,
                 tokenService,
                 objectStorageService,
+                documentCryptoService,
+                documentViewAuditService,
                 auditService,
                 entitlementService);
     }

@@ -37,6 +37,9 @@ public class StartupLogger {
     @ConfigProperty(name = "internal.secret", defaultValue = "")
     Optional<String> internalSecret;
 
+    @ConfigProperty(name = "documents.encryption.key", defaultValue = "")
+    Optional<String> documentsEncryptionKey;
+
     void onStart(@Observes StartupEvent event) {
         log.info("=== Baggagi startup ===");
 
@@ -66,6 +69,12 @@ public class StartupLogger {
         } else if (secret.length() < 32) {
             log.warn("SECURITY: INTERNAL_SECRET tem menos de 32 caracteres (atual: {}). " +
                     "Use um segredo mais forte (openssl rand -hex 32).", secret.length());
+        }
+
+        String docKey = documentsEncryptionKey.orElse("").strip();
+        if (docKey.isEmpty()) {
+            log.warn("SECURITY: DOCUMENTS_ENCRYPTION_KEY não configurada — " +
+                    "upload de documentos pessoais retornará 503. Gere com: openssl rand -base64 32");
         }
 
         // Neon Auth

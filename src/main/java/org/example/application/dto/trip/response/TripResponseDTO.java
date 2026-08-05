@@ -5,6 +5,7 @@ import java.util.UUID;
 import lombok.*;
 import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.TripUserDTO;
+import org.example.domain.enums.OperationStatus;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.TripStatus;
 
@@ -40,6 +41,8 @@ public class TripResponseDTO {
     private UUID createdBy;
     private UUID agencyId;
     private ProposalStatus proposalStatus;
+    private boolean allowNegotiation;
+    private OperationStatus operationStatus;
     private BigDecimal baseCost;
     private BigDecimal finalPrice;
     private String shareCode;
@@ -48,6 +51,10 @@ public class TripResponseDTO {
     private String proposalClientEmail;
     private String proposalClientName;
     private java.time.Instant proposalSentAt;
+    /** Follow-up agendado após o envio. */
+    private java.time.Instant nextFollowUpAt;
+    /** Viagem gerada pelo seed de demonstração do onboarding. */
+    private boolean demo;
     /** Export em PDF liberado nesta viagem por pagamento avulso. */
     private boolean unlockedExportPdf;
     /** Gerações de IA liberadas nesta viagem por pagamento avulso. */

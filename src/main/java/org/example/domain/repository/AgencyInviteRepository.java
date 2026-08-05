@@ -34,4 +34,8 @@ public class AgencyInviteRepository implements PanacheRepositoryBase<AgencyInvit
                 agencyId,
                 AgencyInviteStatus.PENDING);
     }
+
+    public long countPendingByAgency(UUID agencyId) {
+        return count("agency.id = ?1 AND status = ?2", agencyId, AgencyInviteStatus.PENDING);
+    }
 }

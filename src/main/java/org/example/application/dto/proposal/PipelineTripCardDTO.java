@@ -1,6 +1,7 @@
 package org.example.application.dto.proposal;
 
 import lombok.*;
+import org.example.domain.enums.OperationStatus;
 import org.example.domain.enums.ProposalStatus;
 
 import java.math.BigDecimal;
@@ -17,6 +18,10 @@ public class PipelineTripCardDTO {
     private String name;
     private String shareCode;
     private ProposalStatus proposalStatus;
+    private boolean allowNegotiation;
+    private OperationStatus operationStatus;
+    /** Badge financeiro derivado: NOT_REQUESTED | PENDING | PARTIAL | PAID | NONE. */
+    private String paymentBadge;
     private BigDecimal baseCost;
     private BigDecimal finalPrice;
     /** finalPrice − baseCost */

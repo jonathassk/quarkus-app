@@ -14,6 +14,7 @@ import org.example.application.dto.agency.LinkTripClientRequest;
 import org.example.application.dto.common.ApiErrorBody;
 import org.example.application.dto.proposal.AssignTripConsultantRequest;
 import org.example.application.dto.proposal.SendProposalRequest;
+import org.example.application.dto.proposal.UpdateProposalFollowUpRequest;
 import org.example.application.dto.proposal.UpdateProposalStatusRequest;
 import org.example.application.dto.proposal.UpdateTripPricingRequest;
 import org.example.application.dto.proposal.UpsertProposalTiersRequest;
@@ -91,8 +92,7 @@ public class TripProposalController {
             @Context HttpHeaders headers) {
         return withUser(headers, userId ->
                 Response.ok(TripMapper.mapToTripResponseDTO(
-                        proposalService.updateProposalStatus(
-                                tripId, userId, request != null ? request.getProposalStatus() : null))).build());
+                        proposalService.updateProposalStatus(tripId, userId, request))).build());
     }
 
     @PATCH
@@ -122,6 +122,19 @@ public class TripProposalController {
                                 tripId,
                                 userId,
                                 request != null ? request.getClientId() : null))).build());
+    }
+
+    @PATCH
+    @Path("/{tripId}/proposal/follow-up")
+    @Transactional
+    @Operation(summary = "Agendar ou limpar próximo follow-up da proposta")
+    public Response updateFollowUp(
+            @PathParam("tripId") UUID tripId,
+            UpdateProposalFollowUpRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(TripMapper.mapToTripResponseDTO(
+                        proposalService.updateFollowUp(tripId, userId, request))).build());
     }
 
     private Response withUser(HttpHeaders headers, java.util.function.Function<UUID, Response> action) {

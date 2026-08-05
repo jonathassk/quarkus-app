@@ -171,6 +171,40 @@ public class ObjectStorageService {
         }
     }
 
+    /** Server-side download (decrypt path — never expose raw trip-document bytes via presign). */
+    public byte[] getObjectBytes(String s3Key) {
+        ensureConfigured();
+        GetObjectRequest request = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .build();
+        try {
+            return s3Client.getObjectAsBytes(request).asByteArray();
+        } catch (Exception e) {
+            log.error("R2 getObject failed key={} bucket={}", s3Key, bucketName, e);
+            throw new IllegalStateException("Failed to read document from storage: " + e.getMessage(), e);
+        }
+    }
+
+    /** List objects under a prefix (used by document-view audit purge). */
+    public software.amazon.awssdk.services.s3.model.ListObjectsV2Response listObjects(
+            String prefix, String continuationToken) {
+        ensureConfigured();
+        var builder = software.amazon.awssdk.services.s3.model.ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .prefix(prefix)
+                .maxKeys(1000);
+        if (continuationToken != null && !continuationToken.isBlank()) {
+            builder.continuationToken(continuationToken);
+        }
+        try {
+            return s3Client.listObjectsV2(builder.build());
+        } catch (Exception e) {
+            log.error("R2 listObjects failed prefix={} bucket={}", prefix, bucketName, e);
+            throw new IllegalStateException("Failed to list storage objects: " + e.getMessage(), e);
+        }
+    }
+
     public String getBucketName() {
         return bucketName;
     }

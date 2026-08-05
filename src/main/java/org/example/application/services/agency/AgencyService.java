@@ -44,6 +44,10 @@ public class AgencyService {
     private static final char[] TOKEN_ALPHABET =
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789".toCharArray();
 
+    /** Team: até 10 consultores (além do OWNER). Essencial/Solo: apenas o OWNER. */
+    public static final int MAX_CONSULTANTS_TEAM = 10;
+    public static final int MAX_CONSULTANTS_SOLO = 0;
+
     @Inject
     AgencyRepository agencyRepository;
     @Inject
@@ -134,6 +138,21 @@ public class AgencyService {
             }
             agency.setMarkupPercentage(markup);
         }
+        if (request.getContactEmail() != null) {
+            String email = request.getContactEmail().trim().toLowerCase(Locale.ROOT);
+            agency.setContactEmail(email.isEmpty() ? null : email);
+        }
+        if (request.getAgentTitle() != null) {
+            String title = request.getAgentTitle().trim();
+            agency.setAgentTitle(title.isEmpty() ? null : title);
+        }
+        if (request.getWebsiteOrInstagram() != null) {
+            String site = request.getWebsiteOrInstagram().trim();
+            agency.setWebsiteOrInstagram(site.isEmpty() ? null : site);
+        }
+        if (request.getPricingModel() != null) {
+            agency.setPricingModel(normalizePricingModel(request.getPricingModel()));
+        }
         agencyRepository.persist(agency);
         return toBrandingDto(agency, member.getAgencyRole());
     }
@@ -182,19 +201,50 @@ public class AgencyService {
         agencyRepository.persist(agency);
     }
 
-    /** White-label (logo/cores da agência na proposta) — Solo e Team. Essencial usa marca Baggagi. */
+    /**
+     * White-label (logo/cores da agência na proposta) — Essencial, Solo e Team.
+     * Essencial inclui “Powered by Baggagi” ({@link #showsPoweredByBaggagi}).
+     */
     public static boolean hasWhiteLabel(String planType) {
         if (planType == null || planType.isBlank()) {
             return false;
         }
         String plan = planType.trim().toUpperCase();
-        return "B2B_PRO".equals(plan)
+        return "B2B_STARTER".equals(plan)
+                || "B2B_PRO".equals(plan)
                 || "B2B_SOLO".equals(plan)
                 || "B2B_TEAM".equals(plan);
     }
 
     public static boolean hasWhiteLabel(Agency agency) {
         return agency != null && hasWhiteLabel(agency.getPlanType());
+    }
+
+    /** Essencial: white-label com crédito “Powered by Baggagi”. */
+    public static boolean showsPoweredByBaggagi(String planType) {
+        if (planType == null || planType.isBlank()) {
+            return false;
+        }
+        return "B2B_STARTER".equals(planType.trim().toUpperCase());
+    }
+
+    public static boolean showsPoweredByBaggagi(Agency agency) {
+        return agency != null && showsPoweredByBaggagi(agency.getPlanType());
+    }
+
+    /**
+     * Máximo de consultores (papel CONSULTANT) por plano.
+     * Essencial/Solo: 0 (somente OWNER). Team: {@link #MAX_CONSULTANTS_TEAM}.
+     */
+    public static int maxConsultantsForPlan(String planType) {
+        if (planType == null || planType.isBlank()) {
+            return MAX_CONSULTANTS_SOLO;
+        }
+        String plan = planType.trim().toUpperCase();
+        if ("B2B_TEAM".equals(plan)) {
+            return MAX_CONSULTANTS_TEAM;
+        }
+        return MAX_CONSULTANTS_SOLO;
     }
 
     @Transactional
@@ -206,16 +256,28 @@ public class AgencyService {
 
     public AgencyTeamDTO listTeam(UUID userId) {
         AgencyMember actor = requireMembershipOrThrow(userId);
-        List<AgencyMemberDTO> members = agencyMemberRepository.findAllByAgency(actor.getAgency().id).stream()
+        Agency agency = actor.getAgency();
+        List<AgencyMemberDTO> members = agencyMemberRepository.findAllByAgency(agency.id).stream()
                 .map(this::toMemberDto)
                 .toList();
         List<AgencyInviteDTO> pending = List.of();
         if (actor.getAgencyRole() == AgencyRole.AGENCY_OWNER) {
-            pending = agencyInviteRepository.findPendingByAgency(actor.getAgency().id).stream()
+            pending = agencyInviteRepository.findPendingByAgency(agency.id).stream()
                     .map(this::toInviteDto)
                     .toList();
         }
-        return AgencyTeamDTO.builder().members(members).pendingInvites(pending).build();
+        int max = maxConsultantsForPlan(agency.getPlanType());
+        int consultantCount = (int) agencyMemberRepository.countByAgencyAndRole(
+                agency.id, AgencyRole.AGENCY_CONSULTANT);
+        long pendingCount = agencyInviteRepository.countPendingByAgency(agency.id);
+        boolean canInvite = max > 0 && (consultantCount + pendingCount) < max;
+        return AgencyTeamDTO.builder()
+                .members(members)
+                .pendingInvites(pending)
+                .maxConsultants(max)
+                .consultantCount(consultantCount)
+                .canInvite(canInvite)
+                .build();
     }
 
     /** @deprecated use {@link #listTeam} */
@@ -236,6 +298,7 @@ public class AgencyService {
         if (role == AgencyRole.AGENCY_OWNER) {
             throw new BadRequestException("Cannot invite another OWNER via this endpoint");
         }
+        assertCanAddConsultant(actor.getAgency(), true);
 
         Optional<User> existingUser = userRepository.findByEmail(email);
         if (existingUser.isPresent()) {
@@ -315,6 +378,8 @@ public class AgencyService {
             agencyInviteRepository.persist(invite);
             return toMemberDto(existing.get());
         }
+        // Aceite: conta só consultores ativos (este convite sai de PENDING em seguida).
+        assertCanAddConsultant(invite.getAgency(), false);
         AgencyMember member = AgencyMember.builder()
                 .agency(invite.getAgency())
                 .user(user)
@@ -422,13 +487,26 @@ public class AgencyService {
                 .planType(agency.getPlanType())
                 .agencyRole(role != null ? role.name() : null)
                 .whiteLabelEnabled(hasWhiteLabel(agency))
+                .poweredByBaggagi(showsPoweredByBaggagi(agency))
+                .contactEmail(agency.getContactEmail())
+                .agentTitle(agency.getAgentTitle())
+                .agentPhotoUrl(agency.getAgentPhotoUrl())
+                .websiteOrInstagram(agency.getWebsiteOrInstagram())
+                .pricingModel(agency.getPricingModel())
+                .onboardingStep(agency.getOnboardingStep())
+                .onboardingCompleted(agency.getOnboardingCompletedAt() != null)
+                .demoDataActive(agency.isDemoDataActive())
                 .build();
     }
 
     private static final String BAGGAGI_BRAND_NAME = "Baggagi";
     private static final String BAGGAGI_PRIMARY_COLOR = "#134e4a";
 
-    /** Branding público (sem markup). Essencial: marca Baggagi, sem white-label. */
+    /**
+     * Branding público (sem markup).
+     * Planos ativos: marca da agência; Essencial inclui poweredByBaggagi.
+     * Plano inativo / sem white-label: fallback Baggagi.
+     */
     public AgencyBrandingDTO toPublicBrandingDto(Agency agency) {
         if (!hasWhiteLabel(agency)) {
             return AgencyBrandingDTO.builder()
@@ -442,6 +520,7 @@ public class AgencyService {
                     .markupPercentage(null)
                     .agencyRole(null)
                     .whiteLabelEnabled(false)
+                    .poweredByBaggagi(false)
                     .build();
         }
         return AgencyBrandingDTO.builder()
@@ -455,7 +534,34 @@ public class AgencyService {
                 .markupPercentage(null)
                 .agencyRole(null)
                 .whiteLabelEnabled(true)
+                .poweredByBaggagi(showsPoweredByBaggagi(agency))
+                .contactEmail(agency.getContactEmail())
+                .agentTitle(agency.getAgentTitle())
+                .agentPhotoUrl(agency.getAgentPhotoUrl())
+                .websiteOrInstagram(agency.getWebsiteOrInstagram())
                 .build();
+    }
+
+    /**
+     * @param countPending se true, convites PENDING contam no limite (fluxo de convite).
+     *                     No aceite, passar false — o convite atual ainda está PENDING.
+     */
+    private void assertCanAddConsultant(Agency agency, boolean countPending) {
+        int max = maxConsultantsForPlan(agency.getPlanType());
+        if (max <= 0) {
+            throw new BadRequestException(
+                    "Seu plano permite apenas o OWNER. Faça upgrade para o plano Team para convidar consultores.");
+        }
+        long consultants = agencyMemberRepository.countByAgencyAndRole(
+                agency.id, AgencyRole.AGENCY_CONSULTANT);
+        long used = consultants;
+        if (countPending) {
+            used += agencyInviteRepository.countPendingByAgency(agency.id);
+        }
+        if (used >= max) {
+            throw new BadRequestException(
+                    "Limite de " + max + " consultores atingido no plano Team.");
+        }
     }
 
     private AgencyMemberDTO toMemberDto(AgencyMember m) {
@@ -512,5 +618,90 @@ public class AgencyService {
         agency.setLogoUrl(url);
         agencyRepository.persist(agency);
         return toBrandingDto(agency, member.getAgencyRole());
+    }
+
+    @Transactional
+    public AgencyBrandingDTO confirmAgentPhoto(UUID userId, ConfirmAgencyLogoRequest request) {
+        AgencyMember member = requireOwner(userId);
+        if (request.getS3Key() == null || request.getS3Key().isBlank()) {
+            throw new BadRequestException("s3Key is required");
+        }
+        String expectedPrefix = "agencies/" + member.getAgency().id + "/";
+        if (!request.getS3Key().startsWith(expectedPrefix)) {
+            throw new ForbiddenException("Invalid agent photo key for this agency");
+        }
+        String url = request.getPublicUrl();
+        if (url == null || url.isBlank()) {
+            url = objectStorageService.getPublicUrl(request.getS3Key());
+        }
+        Agency agency = member.getAgency();
+        agency.setAgentPhotoUrl(url);
+        agencyRepository.persist(agency);
+        return toBrandingDto(agency, member.getAgencyRole());
+    }
+
+    public AgencyOnboardingDTO getOnboarding(UUID userId) {
+        AgencyMember member = requireMembershipOrThrow(userId);
+        return toOnboardingDto(member.getAgency());
+    }
+
+    @Transactional
+    public AgencyOnboardingDTO updateOnboarding(UUID userId, UpdateAgencyOnboardingRequest request) {
+        AgencyMember member = requireMembershipOrThrow(userId);
+        Agency agency = member.getAgency();
+        if (request == null) {
+            throw new BadRequestException("body is required");
+        }
+        if (request.getStep() != null && !request.getStep().isBlank()) {
+            agency.setOnboardingStep(request.getStep().trim().toUpperCase(Locale.ROOT));
+        }
+        if (Boolean.TRUE.equals(request.getSkip())) {
+            agency.setOnboardingSkippedAt(Instant.now());
+            if (agency.getOnboardingStep() == null || agency.getOnboardingStep().isBlank()) {
+                agency.setOnboardingStep("SKIPPED");
+            }
+        }
+        if (Boolean.TRUE.equals(request.getComplete())) {
+            agency.setOnboardingCompletedAt(Instant.now());
+            agency.setOnboardingStep("DONE");
+        }
+        if (request.getTripId() != null) {
+            agency.setOnboardingTripId(request.getTripId());
+        }
+        if (request.getClientId() != null) {
+            agency.setOnboardingClientId(request.getClientId());
+        }
+        if (request.getPricingModel() != null) {
+            agency.setPricingModel(normalizePricingModel(request.getPricingModel()));
+        }
+        agencyRepository.persist(agency);
+        return toOnboardingDto(agency);
+    }
+
+    public AgencyOnboardingDTO toOnboardingDto(Agency agency) {
+        return AgencyOnboardingDTO.builder()
+                .step(agency.getOnboardingStep() != null ? agency.getOnboardingStep() : "WELCOME")
+                .completed(agency.getOnboardingCompletedAt() != null)
+                .skipped(agency.getOnboardingSkippedAt() != null)
+                .completedAt(agency.getOnboardingCompletedAt())
+                .skippedAt(agency.getOnboardingSkippedAt())
+                .demoDataActive(agency.isDemoDataActive())
+                .planType(agency.getPlanType())
+                .tripId(agency.getOnboardingTripId())
+                .clientId(agency.getOnboardingClientId())
+                .pricingModel(agency.getPricingModel())
+                .build();
+    }
+
+    private static String normalizePricingModel(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim().toUpperCase(Locale.ROOT);
+        return switch (v) {
+            case "PERCENTAGE", "FEE", "COMMISSION", "MIXED", "NONE" -> v;
+            default -> throw new BadRequestException(
+                    "pricingModel must be PERCENTAGE, FEE, COMMISSION, MIXED or NONE");
+        };
     }
 }

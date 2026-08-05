@@ -6,6 +6,8 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import org.example.application.dto.agency.AgencyClientDTO;
+import org.example.application.dto.agency.ImportAgencyClientsRequest;
+import org.example.application.dto.agency.ImportAgencyClientsResponse;
 import org.example.application.dto.agency.UpsertAgencyClientRequest;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyClient;
@@ -16,6 +18,7 @@ import org.example.domain.repository.AgencyClientRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -148,6 +151,86 @@ public class AgencyClientService {
             tripRepository.persist(t);
         }
         clientRepository.delete(client);
+    }
+
+    @Transactional
+    public ImportAgencyClientsResponse importClients(UUID userId, ImportAgencyClientsRequest request) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        if (request == null || request.getClients() == null || request.getClients().isEmpty()) {
+            throw new BadRequestException("clients list is required");
+        }
+        int created = 0;
+        int updated = 0;
+        List<UUID> ids = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        int index = 0;
+        for (ImportAgencyClientsRequest.ImportRow row : request.getClients()) {
+            index++;
+            try {
+                if (row == null || row.getName() == null || row.getName().isBlank()) {
+                    errors.add("Linha " + index + ": nome obrigatório");
+                    continue;
+                }
+                String email = normalizeEmail(row.getEmail());
+                String phone = blankToNull(row.getPhone());
+                if (email == null && phone == null) {
+                    errors.add("Linha " + index + ": e-mail ou telefone obrigatório");
+                    continue;
+                }
+                if (email != null && !EMAIL_PATTERN.matcher(email).matches()) {
+                    errors.add("Linha " + index + ": e-mail inválido");
+                    continue;
+                }
+                AgencyClient existing = null;
+                if (email != null) {
+                    existing = clientRepository.findByAgencyAndEmail(member.getAgency().id, email).orElse(null);
+                }
+                if (existing == null && phone != null) {
+                    existing = clientRepository
+                            .find("agency.id = ?1 AND phone = ?2", member.getAgency().id, phone)
+                            .firstResult();
+                }
+                if (existing != null) {
+                    existing.setName(row.getName().trim());
+                    if (email != null) {
+                        existing.setEmail(email);
+                    }
+                    if (phone != null) {
+                        existing.setPhone(phone);
+                    }
+                    if (row.getNotes() != null) {
+                        existing.setNotes(blankToNull(row.getNotes()));
+                    }
+                    if (row.getTags() != null) {
+                        existing.setTags(blankToNull(row.getTags()));
+                    }
+                    clientRepository.persist(existing);
+                    ids.add(existing.id);
+                    updated++;
+                } else {
+                    AgencyClient client = AgencyClient.builder()
+                            .agency(member.getAgency())
+                            .name(row.getName().trim())
+                            .email(email)
+                            .phone(phone)
+                            .notes(blankToNull(row.getNotes()))
+                            .tags(blankToNull(row.getTags()))
+                            .user(resolvePlatformUser(email))
+                            .build();
+                    clientRepository.persist(client);
+                    ids.add(client.id);
+                    created++;
+                }
+            } catch (Exception e) {
+                errors.add("Linha " + index + ": " + e.getMessage());
+            }
+        }
+        return ImportAgencyClientsResponse.builder()
+                .created(created)
+                .updated(updated)
+                .clientIds(ids)
+                .errors(errors)
+                .build();
     }
 
     private AgencyClient requireClient(UUID agencyId, UUID clientId) {

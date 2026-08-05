@@ -72,6 +72,43 @@ public class Agency extends PanacheEntityBase {
     @Column(name = "stripe_subscription_id", length = 255)
     private String stripeSubscriptionId;
 
+    /** Passo atual do wizard de onboarding B2B. */
+    @Column(name = "onboarding_step", length = 32, nullable = false)
+    @Builder.Default
+    private String onboardingStep = "WELCOME";
+
+    @Column(name = "onboarding_completed_at")
+    private Instant onboardingCompletedAt;
+
+    @Column(name = "onboarding_skipped_at")
+    private Instant onboardingSkippedAt;
+
+    @Column(name = "onboarding_trip_id", columnDefinition = "uuid")
+    private UUID onboardingTripId;
+
+    @Column(name = "onboarding_client_id", columnDefinition = "uuid")
+    private UUID onboardingClientId;
+
+    @Column(name = "demo_data_active", nullable = false)
+    @Builder.Default
+    private boolean demoDataActive = false;
+
+    @Column(name = "contact_email", length = 255)
+    private String contactEmail;
+
+    @Column(name = "agent_title", length = 128)
+    private String agentTitle;
+
+    @Column(name = "agent_photo_url", length = 512)
+    private String agentPhotoUrl;
+
+    @Column(name = "website_or_instagram", length = 255)
+    private String websiteOrInstagram;
+
+    /** PERCENTAGE | FEE | COMMISSION | MIXED | NONE */
+    @Column(name = "pricing_model", length = 32)
+    private String pricingModel;
+
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 

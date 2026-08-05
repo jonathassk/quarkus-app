@@ -69,6 +69,8 @@ public class TripMapper {
             dto.setAgencyId(trip.getAgency().id);
         }
         dto.setProposalStatus(trip.getProposalStatus());
+        dto.setAllowNegotiation(trip.isAllowNegotiation());
+        dto.setOperationStatus(trip.getOperationStatus());
         dto.setBaseCost(trip.getBaseCost());
         dto.setFinalPrice(trip.getFinalPrice());
         dto.setShareCode(trip.getShareCode());
@@ -76,6 +78,8 @@ public class TripMapper {
         dto.setProposalClientEmail(trip.getProposalClientEmail());
         dto.setProposalClientName(trip.getProposalClientName());
         dto.setProposalSentAt(trip.getProposalSentAt());
+        dto.setNextFollowUpAt(trip.getNextFollowUpAt());
+        dto.setDemo(trip.isDemo());
         java.util.Set<TripUnlockKind> unlocks = unlockKinds != null ? unlockKinds : java.util.Set.<TripUnlockKind>of();
         dto.setUnlockedExportPdf(unlocks.contains(TripUnlockKind.EXPORT_PDF));
         dto.setUnlockedAi(unlocks.contains(TripUnlockKind.AI_GENERATIONS));

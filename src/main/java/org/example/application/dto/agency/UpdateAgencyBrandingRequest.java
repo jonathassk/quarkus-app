@@ -13,4 +13,9 @@ public class UpdateAgencyBrandingRequest {
     private String primaryColor;
     private String whatsappNumber;
     private BigDecimal markupPercentage;
+    private String contactEmail;
+    private String agentTitle;
+    private String agentPhotoUrl;
+    private String websiteOrInstagram;
+    private String pricingModel;
 }

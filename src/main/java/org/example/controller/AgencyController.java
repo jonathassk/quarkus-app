@@ -15,6 +15,7 @@ import org.example.application.dto.common.ApiErrorBody;
 import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.services.TokenService;
 import org.example.application.services.agency.AgencyClientService;
+import org.example.application.services.agency.AgencyOnboardingService;
 import org.example.application.services.agency.AgencyService;
 import org.example.application.services.proposal.ProposalService;
 import org.example.domain.entity.AgencyMember;
@@ -39,6 +40,7 @@ public class AgencyController {
     private final UserRepository userRepository;
     private final AgencyService agencyService;
     private final AgencyClientService agencyClientService;
+    private final AgencyOnboardingService agencyOnboardingService;
     private final ProposalService proposalService;
     private final ObjectStorageService objectStorageService;
 
@@ -107,6 +109,95 @@ public class AgencyController {
     public Response logoConfirm(ConfirmAgencyLogoRequest request, @Context HttpHeaders headers) {
         return withUser(headers, userId ->
                 Response.ok(agencyService.confirmLogo(userId, request)).build());
+    }
+
+    @POST
+    @Path("/me/agent-photo-upload-request")
+    @Transactional
+    @Operation(summary = "Presign upload da foto do agente no R2")
+    public Response agentPhotoUploadRequest(UploadDocumentRequest req, @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            AgencyMember member = agencyService.requireOwner(userId);
+            if (!objectStorageService.isConfigured()) {
+                return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                        .entity(Map.of("code", "STORAGE_NOT_CONFIGURED", "message", "Document storage is not configured"))
+                        .build();
+            }
+            var resolved = DocumentUploadSupport.resolve(
+                    req != null ? req.getFileName() : null,
+                    req != null ? req.getContentType() : null);
+            if (resolved.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("code", "INVALID_FILE",
+                                "message", DocumentUploadSupport.unsupportedTypeMessage(
+                                        req != null ? req.getContentType() : null,
+                                        req != null ? req.getFileName() : null)))
+                        .build();
+            }
+            var upload = resolved.get();
+            String ext = "";
+            int dot = upload.fileName().lastIndexOf('.');
+            if (dot >= 0) {
+                ext = upload.fileName().substring(dot);
+            }
+            String s3Key = "agencies/" + member.getAgency().id + "/agent-photo-" + UUID.randomUUID() + ext;
+            String uploadUrl = objectStorageService.presignPut(s3Key, upload.contentType());
+            String publicUrl = objectStorageService.getPublicUrl(s3Key);
+            return Response.status(Response.Status.CREATED).entity(Map.of(
+                    "uploadUrl", uploadUrl,
+                    "s3Key", s3Key,
+                    "publicUrl", publicUrl,
+                    "expiresInSeconds", objectStorageService.getUploadPresignSeconds()
+            )).build();
+        });
+    }
+
+    @POST
+    @Path("/me/agent-photo-confirm")
+    @Transactional
+    @Operation(summary = "Confirmar foto do agente após upload R2")
+    public Response agentPhotoConfirm(ConfirmAgencyLogoRequest request, @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyService.confirmAgentPhoto(userId, request)).build());
+    }
+
+    @GET
+    @Path("/onboarding")
+    @Operation(summary = "Estado do onboarding B2B")
+    public Response getOnboarding(@Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyService.getOnboarding(userId)).build());
+    }
+
+    @PATCH
+    @Path("/onboarding")
+    @Transactional
+    @Operation(summary = "Atualizar passo / progresso do onboarding")
+    public Response patchOnboarding(UpdateAgencyOnboardingRequest request, @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyService.updateOnboarding(userId, request)).build());
+    }
+
+    @POST
+    @Path("/demo")
+    @Transactional
+    @Operation(summary = "Gerar dados de demonstração do onboarding")
+    public Response seedDemo(@Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.status(Response.Status.CREATED)
+                        .entity(agencyOnboardingService.seedDemo(userId))
+                        .build());
+    }
+
+    @DELETE
+    @Path("/demo")
+    @Transactional
+    @Operation(summary = "Apagar dados de demonstração do onboarding")
+    public Response clearDemo(@Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            agencyOnboardingService.clearDemo(userId);
+            return Response.noContent().build();
+        });
     }
 
     @GET
@@ -182,6 +273,15 @@ public class AgencyController {
                         .build());
     }
 
+    @POST
+    @Path("/clients/import")
+    @Transactional
+    @Operation(summary = "Importar clientes CRM em lote (CSV/JSON)")
+    public Response importClients(ImportAgencyClientsRequest request, @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyClientService.importClients(userId, request)).build());
+    }
+
     @GET
     @Path("/clients/{clientId}")
     @Operation(summary = "Ficha 360 do cliente")
@@ -231,6 +331,7 @@ public class AgencyController {
             @QueryParam("status") String status,
             @QueryParam("consultantId") UUID consultantId,
             @QueryParam("q") String q,
+            @QueryParam("scope") @DefaultValue("ACTIVE") String scope,
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("100") int size,
             @Context HttpHeaders headers) {
@@ -243,8 +344,14 @@ public class AgencyController {
                     throw new BadRequestException("Invalid proposal status: " + status);
                 }
             }
+            org.example.domain.enums.PipelineScope pipelineScope;
+            try {
+                pipelineScope = org.example.domain.enums.PipelineScope.fromString(scope);
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("Invalid pipeline scope: " + scope);
+            }
             return Response.ok(proposalService.listPipeline(
-                    userId, parsed, consultantId, q, page, size)).build();
+                    userId, parsed, consultantId, q, pipelineScope, page, size)).build();
         });
     }
 

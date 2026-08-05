@@ -180,6 +180,7 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
      * Pipeline com filtros e paginação no banco.
      *
      * @param scopeUserId quando não-null, restringe a criador ou consultor atribuído
+     * @param scope ACTIVE (kanban), ARCHIVE (histórico) ou ALL
      */
     public List<Trip> findPipeline(
             UUID agencyId,
@@ -187,38 +188,15 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
             UUID consultantId,
             String q,
             UUID scopeUserId,
+            org.example.domain.enums.PipelineScope scope,
             int page,
             int size) {
         StringBuilder jpql = new StringBuilder("FROM Trip t WHERE t.agency.id = :agencyId");
         var em = getEntityManager();
-        if (status != null) {
-            jpql.append(" AND t.proposalStatus = :status");
-        }
-        if (consultantId != null) {
-            jpql.append(" AND t.assignedConsultant.id = :consultantId");
-        }
-        if (scopeUserId != null) {
-            jpql.append(" AND (t.createdBy.id = :scopeUserId OR t.assignedConsultant.id = :scopeUserId)");
-        }
-        if (q != null && !q.isBlank()) {
-            jpql.append(" AND (lower(t.name) LIKE :q OR lower(coalesce(t.proposalClientEmail,'')) LIKE :q"
-                    + " OR lower(coalesce(t.proposalClientName,'')) LIKE :q)");
-        }
+        appendPipelineFilters(jpql, status, consultantId, q, scopeUserId, scope);
         jpql.append(" ORDER BY t.updatedAt DESC");
         var query = em.createQuery(jpql.toString(), Trip.class);
-        query.setParameter("agencyId", agencyId);
-        if (status != null) {
-            query.setParameter("status", status);
-        }
-        if (consultantId != null) {
-            query.setParameter("consultantId", consultantId);
-        }
-        if (scopeUserId != null) {
-            query.setParameter("scopeUserId", scopeUserId);
-        }
-        if (q != null && !q.isBlank()) {
-            query.setParameter("q", "%" + q.trim().toLowerCase() + "%");
-        }
+        bindPipelineParams(query, agencyId, status, consultantId, q, scopeUserId, scope);
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
         query.setFirstResult(safePage * safeSize);
@@ -231,11 +209,30 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
             org.example.domain.enums.ProposalStatus status,
             UUID consultantId,
             String q,
-            UUID scopeUserId) {
+            UUID scopeUserId,
+            org.example.domain.enums.PipelineScope scope) {
         StringBuilder jpql = new StringBuilder("SELECT COUNT(t) FROM Trip t WHERE t.agency.id = :agencyId");
         var em = getEntityManager();
+        appendPipelineFilters(jpql, status, consultantId, q, scopeUserId, scope);
+        var query = em.createQuery(jpql.toString(), Long.class);
+        bindPipelineParams(query, agencyId, status, consultantId, q, scopeUserId, scope);
+        Long count = query.getSingleResult();
+        return count != null ? count : 0L;
+    }
+
+    private void appendPipelineFilters(
+            StringBuilder jpql,
+            org.example.domain.enums.ProposalStatus status,
+            UUID consultantId,
+            String q,
+            UUID scopeUserId,
+            org.example.domain.enums.PipelineScope scope) {
         if (status != null) {
             jpql.append(" AND t.proposalStatus = :status");
+        } else if (scope == org.example.domain.enums.PipelineScope.ACTIVE) {
+            jpql.append(" AND t.proposalStatus IN :scopeStatuses");
+        } else if (scope == org.example.domain.enums.PipelineScope.ARCHIVE) {
+            jpql.append(" AND t.proposalStatus IN :scopeStatuses");
         }
         if (consultantId != null) {
             jpql.append(" AND t.assignedConsultant.id = :consultantId");
@@ -247,10 +244,23 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
             jpql.append(" AND (lower(t.name) LIKE :q OR lower(coalesce(t.proposalClientEmail,'')) LIKE :q"
                     + " OR lower(coalesce(t.proposalClientName,'')) LIKE :q)");
         }
-        var query = em.createQuery(jpql.toString(), Long.class);
+    }
+
+    private void bindPipelineParams(
+            jakarta.persistence.Query query,
+            UUID agencyId,
+            org.example.domain.enums.ProposalStatus status,
+            UUID consultantId,
+            String q,
+            UUID scopeUserId,
+            org.example.domain.enums.PipelineScope scope) {
         query.setParameter("agencyId", agencyId);
         if (status != null) {
             query.setParameter("status", status);
+        } else if (scope == org.example.domain.enums.PipelineScope.ACTIVE) {
+            query.setParameter("scopeStatuses", org.example.domain.enums.ProposalStatus.ACTIVE_PIPELINE);
+        } else if (scope == org.example.domain.enums.PipelineScope.ARCHIVE) {
+            query.setParameter("scopeStatuses", org.example.domain.enums.ProposalStatus.ARCHIVE);
         }
         if (consultantId != null) {
             query.setParameter("consultantId", consultantId);
@@ -261,8 +271,6 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
         if (q != null && !q.isBlank()) {
             query.setParameter("q", "%" + q.trim().toLowerCase() + "%");
         }
-        Long count = query.getSingleResult();
-        return count != null ? count : 0L;
     }
 
     /** Viagens ativas do usuário (criador ou membro) vinculadas a um workspace. */

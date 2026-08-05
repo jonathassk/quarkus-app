@@ -25,25 +25,27 @@ import org.example.domain.enums.DocumentVisibility;
 import org.example.domain.repository.TripDocumentRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
+import org.example.infrastructure.crypto.DocumentCryptoService;
+import org.example.infrastructure.storage.DocumentViewAuditService;
 import org.example.infrastructure.storage.ObjectStorageService;
 import org.example.utils.DocumentUploadSupport;
 import org.example.utils.RequestAuthHeaders;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.media.Content;
-import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Slf4j
-@Tag(name = "Trip Documents", description = "Gerenciamento de arquivos e documentos anexados aos roteiros de viagem (R2/S3)")
+@Tag(name = "Trip Documents", description = "Gerenciamento de arquivos e documentos anexados aos roteiros de viagem (R2/S3, criptografados)")
 @Path("/api/v1/trips")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -55,6 +57,8 @@ public class TripDocumentController {
     private final UserRepository userRepository;
     private final TokenService tokenService;
     private final ObjectStorageService objectStorageService;
+    private final DocumentCryptoService documentCryptoService;
+    private final DocumentViewAuditService documentViewAuditService;
     private final B2bAuditService auditService;
     private final EntitlementService entitlementService;
 
@@ -96,7 +100,7 @@ public class TripDocumentController {
     }
 
     /**
-     * Upload via API (Lambda → R2). Avoids browser CORS on presigned PUT to cloudflarestorage.com.
+     * Upload via API (Lambda → encrypt → R2). Avoids browser CORS on R2 and keeps plaintext off the bucket.
      */
     @POST
     @Path("/{tripId}/documents/upload")
@@ -104,7 +108,7 @@ public class TripDocumentController {
     @Transactional
     @Operation(
         summary = "Enviar arquivo diretamente (API)",
-        description = "Faz o upload de um documento em formato multipart/form-data diretamente pela API para o R2. Limite de 10 MB."
+        description = "Faz o upload de um documento em formato multipart/form-data. O arquivo é criptografado (AES-256-GCM) antes de ir para o R2. Limite de 10 MB."
     )
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Documento enviado e criado com sucesso"),
@@ -112,7 +116,7 @@ public class TripDocumentController {
         @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
         @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
         @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
-        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+        @APIResponse(responseCode = "503", description = "Serviço de storage ou criptografia não configurado")
     })
     public Response uploadDocument(
             @PathParam("tripId") UUID tripId,
@@ -130,6 +134,14 @@ public class TripDocumentController {
                     .entity(ApiErrorBody.builder()
                             .code("STORAGE_NOT_CONFIGURED")
                             .message("Document storage is not configured")
+                            .build())
+                    .build();
+        }
+        if (!documentCryptoService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(ApiErrorBody.builder()
+                            .code("ENCRYPTION_NOT_CONFIGURED")
+                            .message("Document encryption is not configured")
                             .build())
                     .build();
         }
@@ -178,11 +190,13 @@ public class TripDocumentController {
 
         String title = resolveMultipartTitle(multipart, upload.fileName());
         String extension = DocumentUploadSupport.extractExtension(upload.fileName());
-        String s3Key = "trips/" + tripId + "/documents/" + UUID.randomUUID() + extension;
+        String s3Key = "trips/" + tripId + "/documents/" + UUID.randomUUID() + extension + ".enc";
         User uploader = userRepository.findById(userIdOpt.get());
 
         try {
-            objectStorageService.putObject(s3Key, fileBytes, upload.contentType());
+            byte[] encrypted = documentCryptoService.encrypt(fileBytes);
+            // Content-Type no R2 é opaco — o MIME real fica só no banco.
+            objectStorageService.putObject(s3Key, encrypted, "application/octet-stream");
 
             TripDocument doc = TripDocument.builder()
                     .trip(trip)
@@ -190,6 +204,7 @@ public class TripDocumentController {
                     .s3Key(s3Key)
                     .contentType(upload.contentType())
                     .sizeBytes((long) fileBytes.length)
+                    .encryptionVersion(documentCryptoService.currentVersion())
                     .status(DocumentStatus.READY)
                     .uploadedBy(uploader)
                     .build();
@@ -218,212 +233,44 @@ public class TripDocumentController {
     @Path("/{tripId}/documents/upload-request")
     @Transactional
     @Operation(
-        summary = "Solicitar upload presignado",
-        description = "Gera uma URL presignada para o frontend enviar o arquivo diretamente ao Cloudflare R2 (S3)."
+        summary = "Solicitar upload presignado (descontinuado)",
+        description = "Descontinuado: upload direto ao R2 deixaria o arquivo em claro. Use POST /documents/upload."
     )
     @APIResponses({
-        @APIResponse(responseCode = "201", description = "URL presignada gerada com sucesso"),
-        @APIResponse(responseCode = "400", description = "Dados inválidos ou tipo de arquivo não suportado"),
-        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
-        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
-        @APIResponse(responseCode = "404", description = "Viagem não encontrada"),
-        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+        @APIResponse(responseCode = "410", description = "Endpoint descontinuado — use multipart /upload")
     })
     public Response uploadRequest(
             @PathParam("tripId") UUID tripId,
-            @RequestBody(description = "Nome do arquivo e content type", required = true) UploadDocumentRequest req,
+            @RequestBody(description = "Ignorado", required = false) UploadDocumentRequest req,
             @Context HttpHeaders headers) {
-        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
-        if (userIdOpt.isEmpty()) {
-            log.warn("Upload request unauthorized tripId={}", tripId);
-            return unauthorizedResponse();
-        }
-        if (!tripRepository.isUserLinkedToTrip(tripId, userIdOpt.get())) {
-            log.warn("Upload request forbidden tripId={} userId={}", tripId, userIdOpt.get());
-            return forbiddenResponse();
-        }
-        if (!objectStorageService.isConfigured()) {
-            log.error("Upload request rejected: R2 not configured tripId={} userId={}", tripId, userIdOpt.get());
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity(ApiErrorBody.builder()
-                            .code("STORAGE_NOT_CONFIGURED")
-                            .message("Document storage is not configured")
-                            .build())
-                    .build();
-        }
-
-        if (req == null) {
-            log.warn("Upload request missing body tripId={} userId={}", tripId, userIdOpt.get());
-            return badRequest("VALIDATION_ERROR", "Request body is required");
-        }
-
-        Optional<DocumentUploadSupport.ResolvedUpload> resolved =
-                DocumentUploadSupport.resolve(req.getFileName(), req.getContentType());
-        if (resolved.isEmpty()) {
-            String msg = DocumentUploadSupport.unsupportedTypeMessage(
-                    req.getContentType(), req.getFileName());
-            log.warn(
-                    "Upload request validation failed tripId={} userId={} fileName={} contentType={} — {}",
-                    tripId,
-                    userIdOpt.get(),
-                    req.getFileName(),
-                    req.getContentType(),
-                    msg);
-            return badRequest("UNSUPPORTED_CONTENT_TYPE", msg);
-        }
-
-        DocumentUploadSupport.ResolvedUpload upload = resolved.get();
-
-        Trip trip = tripRepository.findById(tripId);
-        if (trip == null) {
-            log.warn("Upload request trip not found tripId={} userId={}", tripId, userIdOpt.get());
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity(ApiErrorBody.builder()
-                            .code("TRIP_NOT_FOUND")
-                            .message("Trip not found")
-                            .build())
-                    .build();
-        }
-
-        long declaredBytes = req.getSizeBytes() != null && req.getSizeBytes() > 0
-                ? req.getSizeBytes()
-                : DocumentUploadSupport.MAX_UPLOAD_BYTES;
-        if (declaredBytes > DocumentUploadSupport.MAX_UPLOAD_BYTES) {
-            return badRequest("FILE_TOO_LARGE", "File exceeds 10 MB limit");
-        }
-        entitlementService.requireCanUploadDocument(userIdOpt.get(), tripId, declaredBytes);
-
-        String extension = DocumentUploadSupport.extractExtension(upload.fileName());
-        String s3Key = "trips/" + tripId + "/documents/" + UUID.randomUUID() + extension;
-        String title = (req.getTitle() != null && !req.getTitle().isBlank())
-                ? req.getTitle().trim()
-                : upload.fileName();
-
-        User uploader = userRepository.findById(userIdOpt.get());
-
-        try {
-            String uploadUrl = objectStorageService.presignPut(s3Key, upload.contentType());
-
-            TripDocument doc = TripDocument.builder()
-                    .trip(trip)
-                    .title(title.length() > 255 ? title.substring(0, 255) : title)
-                    .s3Key(s3Key)
-                    .contentType(upload.contentType())
-                    .sizeBytes(req.getSizeBytes())
-                    .status(DocumentStatus.PENDING)
-                    .visibility(resolveVisibility(req.getVisibility()))
-                    .uploadedBy(uploader)
-                    .build();
-
-            tripDocumentRepository.persist(doc);
-
-            UploadDocumentResponse body = UploadDocumentResponse.builder()
-                    .documentId(doc.id)
-                    .uploadUrl(uploadUrl)
-                    .s3Key(s3Key)
-                    .expiresInSeconds(objectStorageService.getUploadPresignSeconds())
-                    .build();
-
-            return Response.status(Response.Status.CREATED).entity(body).build();
-        } catch (org.example.application.exception.EntitlementExceededException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error(
-                    "Upload request failed tripId={} userId={} fileName={} contentType={}",
-                    tripId,
-                    userIdOpt.get(),
-                    upload.fileName(),
-                    upload.contentType(),
-                    e);
-            return mapUploadException(e);
-        }
+        return Response.status(Response.Status.GONE)
+                .entity(ApiErrorBody.builder()
+                        .code("UPLOAD_REQUEST_DEPRECATED")
+                        .message("Presigned document upload is disabled. Use POST /api/v1/trips/{tripId}/documents/upload so files are encrypted before storage.")
+                        .build())
+                .build();
     }
 
     @POST
     @Path("/{tripId}/documents/upload-confirm")
     @Transactional
     @Operation(
-        summary = "Confirmar upload presignado",
-        description = "Muda o status do documento de PENDING para READY após o frontend fazer o upload direto ao R2."
+        summary = "Confirmar upload presignado (descontinuado)",
+        description = "Descontinuado junto com upload-request."
     )
     @APIResponses({
-        @APIResponse(responseCode = "200", description = "Upload confirmado com sucesso"),
-        @APIResponse(responseCode = "400", description = "Dados inválidos ou documento não pendente"),
-        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
-        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
-        @APIResponse(responseCode = "404", description = "Documento ou viagem não encontrados")
+        @APIResponse(responseCode = "410", description = "Endpoint descontinuado")
     })
     public Response uploadConfirm(
             @PathParam("tripId") UUID tripId,
-            @RequestBody(description = "ID do documento a ser confirmado", required = true) ConfirmUploadRequest req,
+            @RequestBody(description = "Ignorado", required = false) ConfirmUploadRequest req,
             @Context HttpHeaders headers) {
-        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
-        if (userIdOpt.isEmpty()) {
-            log.warn("Upload confirm unauthorized tripId={}", tripId);
-            return unauthorizedResponse();
-        }
-        if (!tripRepository.isUserLinkedToTrip(tripId, userIdOpt.get())) {
-            log.warn("Upload confirm forbidden tripId={} userId={}", tripId, userIdOpt.get());
-            return forbiddenResponse();
-        }
-
-        if (req == null || req.getDocumentId() == null) {
-            log.warn("Upload confirm missing documentId tripId={} userId={}", tripId, userIdOpt.get());
-            return badRequest("VALIDATION_ERROR", "documentId is required");
-        }
-
-        Optional<TripDocument> docOpt =
-                tripDocumentRepository.findByIdAndTripId(req.getDocumentId(), tripId);
-        if (docOpt.isEmpty()) {
-            log.warn(
-                    "Upload confirm document not found tripId={} documentId={} userId={}",
-                    tripId,
-                    req.getDocumentId(),
-                    userIdOpt.get());
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity(ApiErrorBody.builder()
-                            .code("DOCUMENT_NOT_FOUND")
-                            .message("Document not found")
-                            .build())
-                    .build();
-        }
-
-        TripDocument doc = docOpt.get();
-        if (doc.getStatus() != DocumentStatus.PENDING) {
-            log.warn(
-                    "Upload confirm invalid status tripId={} documentId={} status={} userId={}",
-                    tripId,
-                    req.getDocumentId(),
-                    doc.getStatus(),
-                    userIdOpt.get());
-            return badRequest("INVALID_DOCUMENT_STATUS", "Document is not pending confirmation");
-        }
-
-        try {
-            if (req.getSizeBytes() != null && req.getSizeBytes() > 0) {
-                entitlementService.requireCanUploadDocument(userIdOpt.get(), tripId, req.getSizeBytes());
-                doc.setSizeBytes(req.getSizeBytes());
-            }
-            doc.setStatus(DocumentStatus.READY);
-
-            auditService.record(
-                    doc.getTrip(), userIdOpt.get(),
-                    B2bTripLogAction.DOCUMENT_UPLOADED,
-                    "DOCUMENT", doc.id,
-                    "Upload confirmado: '" + doc.getTitle() + "'");
-
-            return Response.ok(toResponse(doc)).build();
-        } catch (org.example.application.exception.EntitlementExceededException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error(
-                    "Upload confirm failed tripId={} documentId={} userId={}",
-                    tripId,
-                    req.getDocumentId(),
-                    userIdOpt.get(),
-                    e);
-            return serverError("Failed to confirm document upload");
-        }
+        return Response.status(Response.Status.GONE)
+                .entity(ApiErrorBody.builder()
+                        .code("UPLOAD_CONFIRM_DEPRECATED")
+                        .message("Presigned document upload is disabled. Use POST /api/v1/trips/{tripId}/documents/upload.")
+                        .build())
+                .build();
     }
 
     @DELETE
@@ -434,7 +281,7 @@ public class TripDocumentController {
         description = "Exclui permanentemente um documento de uma viagem e remove o arquivo correspondente do R2."
     )
     @APIResponses({
-        @APIResponse(responseCode = "240", description = "Documento excluído com sucesso (No Content)"),
+        @APIResponse(responseCode = "204", description = "Documento excluído com sucesso (No Content)"),
         @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
         @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
         @APIResponse(responseCode = "404", description = "Documento não encontrado")
@@ -488,36 +335,40 @@ public class TripDocumentController {
         }
     }
 
+    /**
+     * Entrega o documento descriptografado via API autenticada (sem URL presignada em claro no R2).
+     * Registra auditoria de visualização no R2 (retenção: fim da viagem + 3 meses).
+     */
     @GET
-    @Path("/{tripId}/documents/{docId}/view-request")
+    @Path("/{tripId}/documents/{docId}/content")
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
     @Transactional(Transactional.TxType.REQUIRED)
     @Operation(
-        summary = "Solicitar URL de visualização de documento",
-        description = "Gera uma URL presignada temporária (GET) para visualizar/baixar o arquivo diretamente do R2 de forma segura."
+        summary = "Baixar/visualizar conteúdo do documento",
+        description = "Retorna o arquivo descriptografado após autenticação e vínculo à viagem. Registra quem visualizou."
     )
     @APIResponses({
-        @APIResponse(responseCode = "200", description = "URL presignada de visualização gerada com sucesso"),
-        @APIResponse(responseCode = "400", description = "Documento não pronto para visualização"),
+        @APIResponse(responseCode = "200", description = "Conteúdo do documento"),
+        @APIResponse(responseCode = "400", description = "Documento não pronto"),
         @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
-        @APIResponse(responseCode = "403", description = "Acesso proibido a esta viagem"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido"),
         @APIResponse(responseCode = "404", description = "Documento não encontrado"),
-        @APIResponse(responseCode = "503", description = "Serviço de storage não configurado")
+        @APIResponse(responseCode = "503", description = "Storage/criptografia indisponível")
     })
-    public Response viewRequest(
+    public Response viewContent(
             @PathParam("tripId") UUID tripId,
             @PathParam("docId") UUID docId,
             @Context HttpHeaders headers) {
         Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
         if (userIdOpt.isEmpty()) {
-            log.warn("View request unauthorized tripId={} docId={}", tripId, docId);
+            log.warn("View content unauthorized tripId={} docId={}", tripId, docId);
             return unauthorizedResponse();
         }
         if (!tripRepository.isUserLinkedToTrip(tripId, userIdOpt.get())) {
-            log.warn("View request forbidden tripId={} docId={} userId={}", tripId, docId, userIdOpt.get());
+            log.warn("View content forbidden tripId={} docId={} userId={}", tripId, docId, userIdOpt.get());
             return forbiddenResponse();
         }
         if (!objectStorageService.isConfigured()) {
-            log.error("View request rejected: R2 not configured tripId={} docId={}", tripId, docId);
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
                     .entity(ApiErrorBody.builder()
                             .code("STORAGE_NOT_CONFIGURED")
@@ -528,7 +379,6 @@ public class TripDocumentController {
 
         Optional<TripDocument> docOpt = tripDocumentRepository.findByIdAndTripId(docId, tripId);
         if (docOpt.isEmpty()) {
-            log.warn("View request document not found tripId={} docId={} userId={}", tripId, docId, userIdOpt.get());
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(ApiErrorBody.builder()
                             .code("DOCUMENT_NOT_FOUND")
@@ -539,30 +389,95 @@ public class TripDocumentController {
 
         TripDocument doc = docOpt.get();
         if (doc.getStatus() != DocumentStatus.READY) {
-            log.warn(
-                    "View request document not ready tripId={} docId={} status={}",
-                    tripId,
-                    docId,
-                    doc.getStatus());
             return badRequest("DOCUMENT_NOT_READY", "Document is not ready for viewing");
+        }
+        if (doc.getEncryptionVersion() >= DocumentCryptoService.ENCRYPTION_VERSION_AES_GCM
+                && !documentCryptoService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(ApiErrorBody.builder()
+                            .code("ENCRYPTION_NOT_CONFIGURED")
+                            .message("Document encryption is not configured")
+                            .build())
+                    .build();
         }
 
         try {
-            String viewUrl = objectStorageService.presignGet(doc.getS3Key());
+            byte[] stored = objectStorageService.getObjectBytes(doc.getS3Key());
+            byte[] plaintext = documentCryptoService.decrypt(stored, doc.getEncryptionVersion());
 
-            ViewDocumentResponse body = ViewDocumentResponse.builder()
-                    .documentId(doc.id)
-                    .viewUrl(viewUrl)
-                    .contentType(doc.getContentType())
-                    .title(doc.getTitle())
-                    .expiresInSeconds(objectStorageService.getViewPresignSeconds())
+            documentViewAuditService.recordView(
+                    doc.getTrip(),
+                    doc.id,
+                    userIdOpt.get(),
+                    doc.getTitle(),
+                    resolveClientIp(headers));
+
+            String safeName = doc.getTitle() != null ? doc.getTitle().replace("\"", "") : "document";
+            String encoded = URLEncoder.encode(safeName, StandardCharsets.UTF_8).replace("+", "%20");
+
+            return Response.ok(plaintext)
+                    .type(doc.getContentType() != null ? doc.getContentType() : MediaType.APPLICATION_OCTET_STREAM)
+                    .header("Content-Disposition", "inline; filename=\"" + safeName + "\"; filename*=UTF-8''" + encoded)
+                    .header("X-Document-Id", doc.id.toString())
+                    .header("X-Document-Title", safeName)
+                    .header("Cache-Control", "private, no-store")
                     .build();
-
-            return Response.ok(body).build();
         } catch (Exception e) {
-            log.error("View request presign failed tripId={} docId={} s3Key={}", tripId, docId, doc.getS3Key(), e);
-            return serverError("Failed to generate view URL");
+            log.error("View content failed tripId={} docId={} s3Key={}", tripId, docId, doc.getS3Key(), e);
+            return serverError("Failed to load document");
         }
+    }
+
+    @GET
+    @Path("/{tripId}/documents/{docId}/view-request")
+    @Transactional(Transactional.TxType.REQUIRED)
+    @Operation(
+        summary = "Metadados para visualização (sem URL R2)",
+        description = "Retorna contentType/title e indica que o binário deve ser obtido em GET .../content (criptografado em repouso)."
+    )
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Metadados de visualização"),
+        @APIResponse(responseCode = "400", description = "Documento não pronto"),
+        @APIResponse(responseCode = "401", description = "Token inválido ou expirado"),
+        @APIResponse(responseCode = "403", description = "Acesso proibido"),
+        @APIResponse(responseCode = "404", description = "Documento não encontrado")
+    })
+    public Response viewRequest(
+            @PathParam("tripId") UUID tripId,
+            @PathParam("docId") UUID docId,
+            @Context HttpHeaders headers) {
+        Optional<UUID> userIdOpt = resolveAuthenticatedUserId(headers);
+        if (userIdOpt.isEmpty()) {
+            return unauthorizedResponse();
+        }
+        if (!tripRepository.isUserLinkedToTrip(tripId, userIdOpt.get())) {
+            return forbiddenResponse();
+        }
+
+        Optional<TripDocument> docOpt = tripDocumentRepository.findByIdAndTripId(docId, tripId);
+        if (docOpt.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(ApiErrorBody.builder()
+                            .code("DOCUMENT_NOT_FOUND")
+                            .message("Document not found")
+                            .build())
+                    .build();
+        }
+
+        TripDocument doc = docOpt.get();
+        if (doc.getStatus() != DocumentStatus.READY) {
+            return badRequest("DOCUMENT_NOT_READY", "Document is not ready for viewing");
+        }
+
+        // Sem URL presignada: o cliente deve chamar /content com o JWT.
+        ViewDocumentResponse body = ViewDocumentResponse.builder()
+                .documentId(doc.id)
+                .viewUrl("/api/v1/trips/" + tripId + "/documents/" + docId + "/content")
+                .contentType(doc.getContentType())
+                .title(doc.getTitle())
+                .expiresInSeconds(0)
+                .build();
+        return Response.ok(body).build();
     }
 
     private Optional<UUID> resolveAuthenticatedUserId(HttpHeaders headers) {
@@ -589,6 +504,19 @@ public class TripDocumentController {
         }
     }
 
+    private static String resolveClientIp(HttpHeaders headers) {
+        if (headers == null) {
+            return null;
+        }
+        String forwarded = headers.getHeaderString("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            return (comma >= 0 ? forwarded.substring(0, comma) : forwarded).trim();
+        }
+        String realIp = headers.getHeaderString("X-Real-IP");
+        return realIp != null && !realIp.isBlank() ? realIp.trim() : null;
+    }
+
     private TripDocumentResponse toResponse(TripDocument doc) {
         return TripDocumentResponse.builder()
                 .id(doc.id)
@@ -601,14 +529,6 @@ public class TripDocumentController {
                 .segmentId(doc.getSegment() != null ? doc.getSegment().id : null)
                 .createdAt(doc.getCreatedAt() != null ? doc.getCreatedAt().toString() : null)
                 .build();
-    }
-
-    private static DocumentVisibility resolveVisibility(String raw) {
-        try {
-            return DocumentVisibility.fromString(raw);
-        } catch (IllegalArgumentException e) {
-            return DocumentVisibility.CLIENT;
-        }
     }
 
     private Response unauthorizedResponse() {

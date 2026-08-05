@@ -17,6 +17,8 @@ import org.example.domain.enums.AgencyRole;
 import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentVisibility;
 import org.example.domain.enums.NotificationKind;
+import org.example.domain.enums.OperationStatus;
+import org.example.domain.enums.PipelineScope;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.repository.AgencyClientRepository;
 import org.example.domain.repository.AgencyMemberRepository;
@@ -165,9 +167,11 @@ public class ProposalService {
             trip.setFinalPrice(trip.getFinalPrice().add(delta).setScale(2, RoundingMode.HALF_UP));
         }
 
-        ProposalStatus next = ProposalStatus.APPROVED;
+        ProposalStatus next = ProposalStatus.CONFIRMED;
         if (trip.getFinalPrice() != null && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0) {
             next = ProposalStatus.PENDING_PAYMENT;
+        } else if (trip.getOperationStatus() == null) {
+            trip.setOperationStatus(OperationStatus.TO_RESERVE);
         }
 
         trip.setProposalStatus(next);
@@ -263,13 +267,18 @@ public class ProposalService {
         ProposalStatus status = trip.getProposalStatus() != null ? trip.getProposalStatus() : ProposalStatus.DRAFT;
         if (status == ProposalStatus.REJECTED
                 || status == ProposalStatus.LOST
-                || status == ProposalStatus.CONFIRMED) {
+                || status == ProposalStatus.CANCELLED
+                || status == ProposalStatus.COMPLETED
+                || status == ProposalStatus.CONFIRMED
+                || status == ProposalStatus.IN_TRIP) {
             throw new BadRequestException("Proposta já está em status final: " + status);
         }
         if (status == ProposalStatus.APPROVED || status == ProposalStatus.PENDING_PAYMENT) {
             throw new BadRequestException("Proposta já foi aprovada");
         }
-        if (status != ProposalStatus.SENT && status != ProposalStatus.DRAFT) {
+        if (status != ProposalStatus.SENT
+                && status != ProposalStatus.DRAFT
+                && status != ProposalStatus.NEGOTIATING) {
             throw new BadRequestException("Proposta não está disponível para esta ação (status: " + status + ")");
         }
     }
@@ -405,6 +414,9 @@ public class ProposalService {
 
         Instant now = Instant.now();
         trip.setProposalStatus(ProposalStatus.SENT);
+        if (request != null && request.getAllowNegotiation() != null) {
+            trip.setAllowNegotiation(Boolean.TRUE.equals(request.getAllowNegotiation()));
+        }
         trip.setLastContactAt(now);
         trip.setProposalSentAt(now);
         trip.setProposalExpiresAt(resolveExpiry(request, now));
@@ -427,7 +439,8 @@ public class ProposalService {
         auditService.record(
                 trip, userId, B2bTripLogAction.PROPOSAL_SENT,
                 "TRIP", trip.id, null,
-                "{\"proposalStatus\":\"SENT\",\"emailQueued\":" + queued + "}",
+                "{\"proposalStatus\":\"SENT\",\"emailQueued\":" + queued
+                        + ",\"allowNegotiation\":" + trip.isAllowNegotiation() + "}",
                 "Proposta enviada para " + clientEmail, null);
 
         // In-app para membros internos; e-mail do cliente já foi via white-label.
@@ -524,25 +537,73 @@ public class ProposalService {
     }
 
     @Transactional
-    public Trip updateProposalStatus(UUID tripId, UUID userId, ProposalStatus status) {
+    public Trip updateProposalStatus(UUID tripId, UUID userId, UpdateProposalStatusRequest request) {
         Trip trip = requireAgencyTripAccess(tripId, userId);
-        if (status == null) {
-            throw new BadRequestException("proposalStatus is required");
+        if (request == null) {
+            throw new BadRequestException("request is required");
         }
-        trip.setProposalStatus(status);
+
+        ProposalStatus status = request.getProposalStatus();
+        boolean changed = false;
+
+        if (request.getAllowNegotiation() != null) {
+            trip.setAllowNegotiation(request.getAllowNegotiation());
+            changed = true;
+        }
+
+        if (request.getOperationStatus() != null) {
+            trip.setOperationStatus(request.getOperationStatus());
+            changed = true;
+        }
+
+        if (status != null) {
+            if (status == ProposalStatus.NEGOTIATING && !trip.isAllowNegotiation()) {
+                throw new BadRequestException(
+                        "Negociação não está habilitada nesta proposta. Reenvie com a opção de negociar.");
+            }
+            if (status == ProposalStatus.APPROVED) {
+                status = ProposalStatus.CONFIRMED;
+            }
+            if (status == ProposalStatus.CONFIRMED && trip.getOperationStatus() == null) {
+                trip.setOperationStatus(OperationStatus.TO_RESERVE);
+            }
+            if (status == ProposalStatus.CANCELLED && trip.getOperationStatus() != null) {
+                trip.setOperationStatus(OperationStatus.CANCELLED);
+            }
+            trip.setProposalStatus(status);
+            changed = true;
+        }
+
+        if (!changed) {
+            throw new BadRequestException("proposalStatus, operationStatus or allowNegotiation is required");
+        }
+
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
-        B2bTripLogAction action = switch (status) {
+
+        ProposalStatus effective = trip.getProposalStatus();
+        B2bTripLogAction action = switch (effective) {
             case APPROVED, PENDING_PAYMENT -> B2bTripLogAction.PROPOSAL_APPROVED;
-            case CONFIRMED -> B2bTripLogAction.PROPOSAL_CONFIRMED;
-            case REJECTED, LOST -> B2bTripLogAction.PROPOSAL_REJECTED;
-            case SENT -> B2bTripLogAction.PROPOSAL_SENT;
+            case CONFIRMED, IN_TRIP, COMPLETED -> B2bTripLogAction.PROPOSAL_CONFIRMED;
+            case REJECTED, LOST, CANCELLED -> B2bTripLogAction.PROPOSAL_REJECTED;
+            case SENT, NEGOTIATING -> B2bTripLogAction.PROPOSAL_SENT;
             default -> B2bTripLogAction.TRIP_STATUS_CHANGED;
         };
         auditService.record(trip, userId, action, "TRIP", trip.id, null,
-                "{\"proposalStatus\":\"" + status + "\"}",
-                "Status da proposta alterado para " + status, null);
+                "{\"proposalStatus\":\"" + effective + "\""
+                        + (trip.getOperationStatus() != null
+                        ? ",\"operationStatus\":\"" + trip.getOperationStatus() + "\"" : "")
+                        + ",\"allowNegotiation\":" + trip.isAllowNegotiation() + "}",
+                "Status da proposta alterado para " + effective, null);
         return trip;
+    }
+
+    /** Compatível com callers que só passam o status. */
+    @Transactional
+    public Trip updateProposalStatus(UUID tripId, UUID userId, ProposalStatus status) {
+        return updateProposalStatus(tripId, userId, UpdateProposalStatusRequest.builder()
+                .proposalStatus(status)
+                .build());
     }
 
     @Transactional
@@ -610,6 +671,15 @@ public class ProposalService {
         return trip;
     }
 
+    @Transactional
+    public Trip updateFollowUp(UUID tripId, UUID userId, UpdateProposalFollowUpRequest request) {
+        Trip trip = requireAgencyTripAccess(tripId, userId);
+        Instant at = request != null ? request.getNextFollowUpAt() : null;
+        trip.setNextFollowUpAt(at);
+        tripRepository.persist(trip);
+        return trip;
+    }
+
     public PipelinePageDTO listPipeline(
             UUID userId,
             ProposalStatus status,
@@ -617,18 +687,37 @@ public class ProposalService {
             String q,
             int page,
             int size) {
+        return listPipeline(userId, status, consultantId, q, PipelineScope.ACTIVE, page, size);
+    }
+
+    public PipelinePageDTO listPipeline(
+            UUID userId,
+            ProposalStatus status,
+            UUID consultantId,
+            String q,
+            PipelineScope scope,
+            int page,
+            int size) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         Agency agency = member.getAgency();
         UUID scopeUserId = member.getAgencyRole() == AgencyRole.AGENCY_OWNER ? null : userId;
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
+        PipelineScope resolvedScope = scope != null ? scope : PipelineScope.ACTIVE;
 
         List<Trip> trips = tripRepository.findPipeline(
-                agency.id, status, consultantId, q, scopeUserId, safePage, safeSize);
-        long total = tripRepository.countPipeline(agency.id, status, consultantId, q, scopeUserId);
+                agency.id, status, consultantId, q, scopeUserId, resolvedScope, safePage, safeSize);
+        for (Trip trip : trips) {
+            syncPipelineLifecycle(trip);
+        }
+        long total = tripRepository.countPipeline(
+                agency.id, status, consultantId, q, scopeUserId, resolvedScope);
 
         return PipelinePageDTO.builder()
-                .items(trips.stream().map(this::toPipelineCard).toList())
+                .items(trips.stream()
+                        .filter(t -> matchesScopeAfterSync(t, status, resolvedScope))
+                        .map(this::toPipelineCard)
+                        .toList())
                 .total(total)
                 .page(safePage)
                 .size(safeSize)
@@ -637,7 +726,53 @@ public class ProposalService {
 
     /** Compat: lista plana sem filtros (analytics e callers legados). */
     public List<PipelineTripCardDTO> listPipeline(UUID userId) {
-        return listPipeline(userId, null, null, null, 0, 100).getItems();
+        return listPipeline(userId, null, null, null, PipelineScope.ALL, 0, 100).getItems();
+    }
+
+    private boolean matchesScopeAfterSync(Trip trip, ProposalStatus statusFilter, PipelineScope scope) {
+        ProposalStatus s = trip.getProposalStatus() != null ? trip.getProposalStatus() : ProposalStatus.DRAFT;
+        if (statusFilter != null) {
+            return s == statusFilter;
+        }
+        if (scope == PipelineScope.ACTIVE) {
+            return s.isActivePipeline();
+        }
+        if (scope == PipelineScope.ARCHIVE) {
+            return s.isArchive();
+        }
+        return true;
+    }
+
+    /**
+     * Promove Confirmada → Em viagem → Concluída com base nas datas da viagem.
+     */
+    private void syncPipelineLifecycle(Trip trip) {
+        ProposalStatus status = trip.getProposalStatus();
+        if (status == null || status.isArchive()) {
+            return;
+        }
+        LocalDate today = LocalDate.now();
+        LocalDate start = trip.getStartDate();
+        LocalDate end = trip.getEndDate();
+
+        if (end != null && today.isAfter(end)
+                && (status == ProposalStatus.CONFIRMED
+                || status == ProposalStatus.IN_TRIP
+                || status == ProposalStatus.APPROVED)) {
+            trip.setProposalStatus(ProposalStatus.COMPLETED);
+            tripRepository.persist(trip);
+            return;
+        }
+
+        if (start != null && end != null
+                && !today.isBefore(start) && !today.isAfter(end)
+                && (status == ProposalStatus.CONFIRMED || status == ProposalStatus.APPROVED)) {
+            trip.setProposalStatus(ProposalStatus.IN_TRIP);
+            if (trip.getOperationStatus() == null) {
+                trip.setOperationStatus(OperationStatus.TO_RESERVE);
+            }
+            tripRepository.persist(trip);
+        }
     }
 
     /** Compat: analytics sem filtro de período (todo o histórico). */
@@ -827,17 +962,21 @@ public class ProposalService {
             ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
             boolean countsAsVolume = t.getFinalPrice() != null
                     && (s == ProposalStatus.DRAFT
+                    || s == ProposalStatus.QUOTING
                     || s == ProposalStatus.SENT
+                    || s == ProposalStatus.NEGOTIATING
                     || s == ProposalStatus.APPROVED
                     || s == ProposalStatus.PENDING_PAYMENT
-                    || s == ProposalStatus.CONFIRMED);
+                    || s == ProposalStatus.CONFIRMED
+                    || s == ProposalStatus.IN_TRIP
+                    || s == ProposalStatus.COMPLETED);
             switch (s) {
-                case DRAFT -> m.draft++;
-                case SENT -> m.sent++;
+                case DRAFT, QUOTING -> m.draft++;
+                case SENT, NEGOTIATING -> m.sent++;
                 case APPROVED -> m.approved++;
                 case PENDING_PAYMENT -> m.pendingPayment++;
-                case CONFIRMED -> m.confirmed++;
-                case REJECTED -> m.rejected++;
+                case CONFIRMED, IN_TRIP, COMPLETED -> m.confirmed++;
+                case REJECTED, CANCELLED -> m.rejected++;
                 case LOST -> m.lost++;
             }
 
@@ -960,22 +1099,28 @@ public class ProposalService {
             });
 
             ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
-            boolean inFunnel = s != ProposalStatus.DRAFT;
+            boolean inFunnel = s != ProposalStatus.DRAFT && s != ProposalStatus.QUOTING;
             if (inFunnel) {
                 agg.handled++;
             }
             if (s == ProposalStatus.APPROVED
                     || s == ProposalStatus.PENDING_PAYMENT
-                    || s == ProposalStatus.CONFIRMED) {
+                    || s == ProposalStatus.CONFIRMED
+                    || s == ProposalStatus.IN_TRIP
+                    || s == ProposalStatus.COMPLETED) {
                 agg.won++;
             }
 
             boolean countsAsVolume = t.getFinalPrice() != null
                     && (s == ProposalStatus.DRAFT
+                    || s == ProposalStatus.QUOTING
                     || s == ProposalStatus.SENT
+                    || s == ProposalStatus.NEGOTIATING
                     || s == ProposalStatus.APPROVED
                     || s == ProposalStatus.PENDING_PAYMENT
-                    || s == ProposalStatus.CONFIRMED);
+                    || s == ProposalStatus.CONFIRMED
+                    || s == ProposalStatus.IN_TRIP
+                    || s == ProposalStatus.COMPLETED);
             if (countsAsVolume) {
                 agg.volume = agg.volume.add(t.getFinalPrice());
                 if (t.getBaseCost() != null) {
@@ -1086,7 +1231,9 @@ public class ProposalService {
                 .proposalStatus(trip.getProposalStatus())
                 .paymentRequired(trip.getFinalPrice() != null
                         && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0
-                        && trip.getProposalStatus() != ProposalStatus.CONFIRMED)
+                        && trip.getProposalStatus() != ProposalStatus.CONFIRMED
+                        && trip.getProposalStatus() != ProposalStatus.IN_TRIP
+                        && trip.getProposalStatus() != ProposalStatus.COMPLETED)
                 .depositAmount(trip.getFinalPrice() != null && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0
                         ? trip.getFinalPrice()
                             .multiply(org.example.application.services.proposal.ProposalPaymentService.DEFAULT_DEPOSIT_RATIO)
@@ -1129,6 +1276,9 @@ public class ProposalService {
                 .name(t.getName())
                 .shareCode(t.getShareCode())
                 .proposalStatus(t.getProposalStatus())
+                .allowNegotiation(t.isAllowNegotiation())
+                .operationStatus(t.getOperationStatus())
+                .paymentBadge(resolvePaymentBadge(t))
                 .baseCost(base)
                 .finalPrice(finalPrice)
                 .margin(margin)
@@ -1150,6 +1300,18 @@ public class ProposalService {
                 .proposalViewCount(t.getProposalViewCount())
                 .proposalViewsToday(t.getProposalViewsToday())
                 .build();
+    }
+
+    private String resolvePaymentBadge(Trip t) {
+        ProposalStatus s = t.getProposalStatus() != null ? t.getProposalStatus() : ProposalStatus.DRAFT;
+        boolean hasPrice = t.getFinalPrice() != null && t.getFinalPrice().compareTo(BigDecimal.ZERO) > 0;
+        return switch (s) {
+            case PENDING_PAYMENT -> "PENDING";
+            case CONFIRMED, IN_TRIP, COMPLETED -> hasPrice ? "PAID" : "NONE";
+            case APPROVED -> "NONE";
+            case CANCELLED -> hasPrice ? "REFUNDED" : "NONE";
+            default -> hasPrice ? "NOT_REQUESTED" : "NONE";
+        };
     }
 
     private Trip requireAgencyTripAccess(UUID tripId, UUID userId) {

@@ -3,6 +3,7 @@ package org.example.domain.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.example.domain.enums.OperationStatus;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.TripStatus;
 import org.hibernate.annotations.UuidGenerator;
@@ -108,6 +109,19 @@ public class Trip extends PanacheEntityBase {
     @Builder.Default
     private ProposalStatus proposalStatus = ProposalStatus.DRAFT;
 
+    /**
+     * Quando true, o agente pode mover a proposta para {@link ProposalStatus#NEGOTIATING}
+     * após o envio. Definido no momento do envio.
+     */
+    @Column(name = "allow_negotiation", nullable = false)
+    @Builder.Default
+    private boolean allowNegotiation = false;
+
+    /** Subestado operacional pós-venda (badge; não é coluna do kanban). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "operation_status", length = 32)
+    private OperationStatus operationStatus;
+
     @Column(name = "base_cost", precision = 12, scale = 2)
     private BigDecimal baseCost;
 
@@ -163,6 +177,15 @@ public class Trip extends PanacheEntityBase {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assigned_consultant_id")
     private User assignedConsultant;
+
+    /** Viagem gerada pelo seed de demonstração do onboarding. */
+    @Column(name = "is_demo", nullable = false)
+    @Builder.Default
+    private boolean demo = false;
+
+    /** Próximo follow-up agendado após envio da proposta. */
+    @Column(name = "next_follow_up_at")
+    private Instant nextFollowUpAt;
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

@@ -72,6 +72,11 @@ public class AgencyClient extends PanacheEntityBase {
     @JoinColumn(name = "user_id")
     private User user;
 
+    /** Cliente gerado pelo seed de demonstração do onboarding. */
+    @Column(name = "is_demo", nullable = false)
+    @Builder.Default
+    private boolean demo = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
