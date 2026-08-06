@@ -160,12 +160,30 @@ public class CommercialProposalService {
         }
         opportunityRepository.persist(opp);
 
-        if (trip.getShareCode() == null) {
-            trip.setShareCode(proposal.getShareCode());
-        }
+        assignProposalShareCodeIfAvailable(trip, proposal.getShareCode());
         trip.setProposalStatus(ProposalStatus.QUOTING);
 
         return toDto(proposal, true);
+    }
+
+    /**
+     * Assigns {@code proposalShareCode} onto the trip only when safe under
+     * {@code uk_trips_share_code}: trip has no code yet and no other trip already owns it.
+     */
+    private void assignProposalShareCodeIfAvailable(Trip trip, String proposalShareCode) {
+        if (trip == null || proposalShareCode == null || proposalShareCode.isBlank()) {
+            return;
+        }
+        if (proposalShareCode.equals(trip.getShareCode())) {
+            return;
+        }
+        if (trip.getShareCode() != null && !trip.getShareCode().isBlank()) {
+            return;
+        }
+        if (tripRepository.findByShareCode(proposalShareCode).isPresent()) {
+            return;
+        }
+        trip.setShareCode(proposalShareCode);
     }
 
     private Trip createTripFromOpportunity(AgencyOpportunity opp, User creator, AgencyMember member) {
@@ -248,6 +266,7 @@ public class CommercialProposalService {
                 .assignedConsultant(srcTrip.getAssignedConsultant())
                 .status(TripStatus.PLANNING)
                 .proposalStatus(ProposalStatus.QUOTING)
+                .shareCode(ProposalService.generateShareCode())
                 .startDate(srcTrip.getStartDate())
                 .endDate(srcTrip.getEndDate())
                 .durationDays(srcTrip.getDurationDays())
@@ -726,7 +745,8 @@ public class CommercialProposalService {
             trip.setProposalClientEmail(version.getClientEmail());
             trip.setProposalClientName(version.getClientName());
             trip.setAllowNegotiation(version.isAllowNegotiation());
-            trip.setShareCode(proposal.getShareCode());
+            // Trip share_code is UNIQUE — only assign when free (multi-option safe).
+            assignProposalShareCodeIfAvailable(trip, proposal.getShareCode());
             syncTripMirror(opt);
         }
         if (proposal.getOpportunity() != null) {
