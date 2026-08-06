@@ -80,8 +80,10 @@ public class AgencyOpportunityDTO {
     private String nextActionNote;
     private UUID nextActionAssigneeId;
     private String nextActionAssigneeName;
+    private UUID nextActionTaskId;
     private Boolean missingNextAction;
     private Boolean nextActionOverdue;
+    private Boolean suggestAdvanceFollowUp;
     private Integer proposalCount;
     private Instant proposalLastViewedAt;
     private Long proposalViewCount;

@@ -14,6 +14,7 @@ import org.example.application.dto.agency.*;
 import org.example.application.dto.common.ApiErrorBody;
 import org.example.application.dto.document.UploadDocumentRequest;
 import org.example.application.services.TokenService;
+import org.example.application.services.agency.AgencyAgendaService;
 import org.example.application.services.agency.AgencyClientService;
 import org.example.application.services.agency.AgencyOnboardingService;
 import org.example.application.services.agency.AgencyOpportunityService;
@@ -43,6 +44,7 @@ public class AgencyController {
     private final AgencyClientService agencyClientService;
     private final AgencyOnboardingService agencyOnboardingService;
     private final AgencyOpportunityService agencyOpportunityService;
+    private final AgencyAgendaService agencyAgendaService;
     private final ProposalService proposalService;
     private final ObjectStorageService objectStorageService;
 
@@ -440,6 +442,16 @@ public class AgencyController {
     }
 
     @GET
+    @Path("/agenda")
+    @Operation(summary = "Agenda operacional do agente (atrasadas, hoje, próximas, aguardando, sem ação)")
+    public Response getAgenda(
+            @QueryParam("assigneeId") UUID assigneeId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyAgendaService.getAgenda(userId, assigneeId)).build());
+    }
+
+    @GET
     @Path("/opportunities/{opportunityId}/tasks")
     @Operation(summary = "Listar tarefas da solicitação")
     public Response listOpportunityTasks(
@@ -452,14 +464,28 @@ public class AgencyController {
     @POST
     @Path("/opportunities/{opportunityId}/tasks")
     @Transactional
-    @Operation(summary = "Criar tarefa na solicitação")
+    @Operation(summary = "Criar tarefa / próxima ação na solicitação")
     public Response createOpportunityTask(
             @PathParam("opportunityId") UUID opportunityId,
             UpsertOpportunityTaskRequest request,
             @Context HttpHeaders headers) {
         return withUser(headers, userId ->
                 Response.status(Response.Status.CREATED)
-                        .entity(agencyOpportunityService.createTask(userId, opportunityId, request))
+                        .entity(agencyAgendaService.createTask(userId, opportunityId, request))
+                        .build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/next-action")
+    @Transactional
+    @Operation(summary = "Definir ou substituir a próxima ação da oportunidade")
+    public Response setNextAction(
+            @PathParam("opportunityId") UUID opportunityId,
+            SetNextActionRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.status(Response.Status.CREATED)
+                        .entity(agencyAgendaService.setNextAction(userId, opportunityId, request))
                         .build());
     }
 
@@ -473,7 +499,49 @@ public class AgencyController {
             UpsertOpportunityTaskRequest request,
             @Context HttpHeaders headers) {
         return withUser(headers, userId ->
-                Response.ok(agencyOpportunityService.updateTask(userId, opportunityId, taskId, request))
+                Response.ok(agencyAgendaService.updateTask(userId, opportunityId, taskId, request))
+                        .build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/tasks/{taskId}/complete")
+    @Transactional
+    @Operation(summary = "Concluir tarefa e opcionalmente definir próximo passo")
+    public Response completeOpportunityTask(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("taskId") UUID taskId,
+            CompleteOpportunityTaskRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyAgendaService.completeTask(userId, opportunityId, taskId, request))
+                        .build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/tasks/{taskId}/defer")
+    @Transactional
+    @Operation(summary = "Adiar data da tarefa")
+    public Response deferOpportunityTask(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("taskId") UUID taskId,
+            DeferOpportunityTaskRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyAgendaService.deferTask(userId, opportunityId, taskId, request))
+                        .build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/tasks/{taskId}/waiting")
+    @Transactional
+    @Operation(summary = "Marcar tarefa como aguardando terceiro (com data de revisão)")
+    public Response waitingOpportunityTask(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("taskId") UUID taskId,
+            WaitingOpportunityTaskRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyAgendaService.markWaiting(userId, opportunityId, taskId, request))
                         .build());
     }
 
@@ -486,7 +554,7 @@ public class AgencyController {
             @PathParam("taskId") UUID taskId,
             @Context HttpHeaders headers) {
         return withUser(headers, userId -> {
-            agencyOpportunityService.deleteTask(userId, opportunityId, taskId);
+            agencyAgendaService.deleteTask(userId, opportunityId, taskId);
             return Response.noContent().build();
         });
     }

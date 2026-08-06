@@ -92,6 +92,10 @@ public class AgencyOpportunityService {
     ObjectStorageService objectStorageService;
     @Inject
     CommercialProposalService commercialProposalService;
+    @Inject
+    AgencyAgendaService agendaService;
+    @Inject
+    OpportunityTaskAutomationService taskAutomationService;
 
     public List<AgencyOpportunityDTO> list(
             UUID userId,
@@ -168,6 +172,7 @@ public class AgencyOpportunityService {
         opportunityRepository.persist(opp);
         recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.CREATED,
                 "Oportunidade criada", null);
+        taskAutomationService.onOpportunityCreated(opp);
         return toDto(opp);
     }
 
@@ -779,95 +784,25 @@ public class AgencyOpportunityService {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         requireAccessibleOpportunity(member, userId, opportunityId);
         return taskRepository.listByOpportunity(opportunityId).stream()
-                .map(this::toTaskDto)
+                .map(agendaService::toTaskDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional
     public AgencyOpportunityTaskDTO createTask(
             UUID userId, UUID opportunityId, UpsertOpportunityTaskRequest request) {
-        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
-        if (request == null || request.getTitle() == null || request.getTitle().isBlank()) {
-            throw new BadRequestException("title is required");
-        }
-        User assignee = null;
-        if (request.getAssigneeUserId() != null) {
-            assignee = userRepository.findById(request.getAssigneeUserId());
-            if (assignee == null) {
-                throw new NotFoundException("Assignee not found");
-            }
-        }
-        AgencyOpportunityTask task = AgencyOpportunityTask.builder()
-                .opportunity(opp)
-                .agency(opp.getAgency())
-                .title(request.getTitle().trim())
-                .status(OpportunityTaskStatus.OPEN)
-                .dueAt(request.getDueAt())
-                .assignee(assignee)
-                .build();
-        taskRepository.persist(task);
-        recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.TASK,
-                "Tarefa criada: " + task.getTitle(), null);
-        opp.setLastActivityAt(Instant.now());
-        if (opp.getNextActionAt() == null && request.getDueAt() != null) {
-            opp.setNextActionAt(request.getDueAt());
-            opp.setNextActionNote(task.getTitle());
-            if (assignee != null) {
-                opp.setNextActionAssignee(assignee);
-            }
-        }
-        opportunityRepository.persist(opp);
-        return toTaskDto(task);
+        return agendaService.createTask(userId, opportunityId, request);
     }
 
     @Transactional
     public AgencyOpportunityTaskDTO updateTask(
             UUID userId, UUID opportunityId, UUID taskId, UpsertOpportunityTaskRequest request) {
-        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        requireAccessibleOpportunity(member, userId, opportunityId);
-        AgencyOpportunityTask task = taskRepository.findById(taskId);
-        if (task == null || task.getOpportunity() == null || !opportunityId.equals(task.getOpportunity().id)) {
-            throw new NotFoundException("Task not found");
-        }
-        if (request == null) {
-            throw new BadRequestException("body is required");
-        }
-        if (request.getTitle() != null && !request.getTitle().isBlank()) {
-            task.setTitle(request.getTitle().trim());
-        }
-        if (request.getDueAt() != null) {
-            task.setDueAt(request.getDueAt());
-        }
-        if (request.getAssigneeUserId() != null) {
-            User assignee = userRepository.findById(request.getAssigneeUserId());
-            if (assignee == null) {
-                throw new NotFoundException("Assignee not found");
-            }
-            task.setAssignee(assignee);
-        }
-        if (request.getStatus() != null) {
-            OpportunityTaskStatus status = OpportunityTaskStatus.fromString(request.getStatus());
-            task.setStatus(status);
-            if (status == OpportunityTaskStatus.DONE) {
-                task.setCompletedAt(Instant.now());
-            } else {
-                task.setCompletedAt(null);
-            }
-        }
-        taskRepository.persist(task);
-        return toTaskDto(task);
+        return agendaService.updateTask(userId, opportunityId, taskId, request);
     }
 
     @Transactional
     public void deleteTask(UUID userId, UUID opportunityId, UUID taskId) {
-        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
-        requireAccessibleOpportunity(member, userId, opportunityId);
-        AgencyOpportunityTask task = taskRepository.findById(taskId);
-        if (task == null || task.getOpportunity() == null || !opportunityId.equals(task.getOpportunity().id)) {
-            throw new NotFoundException("Task not found");
-        }
-        taskRepository.delete(task);
+        agendaService.deleteTask(userId, opportunityId, taskId);
     }
 
     // ── Files ───────────────────────────────────────────────────────────────
@@ -958,25 +893,7 @@ public class AgencyOpportunityService {
     }
 
     private AgencyOpportunityTaskDTO toTaskDto(AgencyOpportunityTask task) {
-        User assignee = task.getAssignee();
-        boolean overdue = task.getStatus() == OpportunityTaskStatus.OPEN
-                && task.getDueAt() != null
-                && task.getDueAt().isBefore(Instant.now());
-        return AgencyOpportunityTaskDTO.builder()
-                .id(task.id)
-                .opportunityId(task.getOpportunity() != null ? task.getOpportunity().id : null)
-                .title(task.getTitle())
-                .status(task.getStatus() != null ? task.getStatus().name() : OpportunityTaskStatus.OPEN.name())
-                .dueAt(task.getDueAt())
-                .assigneeUserId(assignee != null ? assignee.id : null)
-                .assigneeName(assignee != null
-                        ? (assignee.getFullName() != null ? assignee.getFullName() : assignee.getEmail())
-                        : null)
-                .completedAt(task.getCompletedAt())
-                .createdAt(task.getCreatedAt())
-                .updatedAt(task.getUpdatedAt())
-                .overdue(overdue)
-                .build();
+        return agendaService.toTaskDto(task);
     }
 
     private AgencyOpportunityFileDTO toFileDto(AgencyOpportunityFile file, boolean withViewUrl) {
@@ -1055,12 +972,18 @@ public class AgencyOpportunityService {
         Trip trip = opp.getTrip();
         Instant now = Instant.now();
         boolean terminal = opp.getStage() == OpportunityStage.WON || opp.getStage() == OpportunityStage.LOST;
-        boolean missingNextAction = !terminal && opp.getStage() != OpportunityStage.NEW
+        boolean missingNextAction = !terminal
+                && opp.getNextActionTask() == null
                 && opp.getNextActionAt() == null;
         boolean overdue = !terminal && opp.getNextActionAt() != null
                 && opp.getNextActionAt().isBefore(now);
+        boolean waitingNext = !terminal
+                && opp.getNextActionTask() != null
+                && opp.getNextActionTask().getStatus() == OpportunityTaskStatus.WAITING;
         String health = overdue
                 ? "OVERDUE"
+                : waitingNext
+                ? "WAITING"
                 : !terminal && opp.getLastActivityAt() != null
                         && opp.getLastActivityAt().isBefore(now.minusSeconds(3 * 24 * 60 * 60))
                 ? "STALE"
@@ -1068,6 +991,11 @@ public class AgencyOpportunityService {
                         && trip.getProposalLastViewedAt().isAfter(now.minusSeconds(48 * 60 * 60))
                 ? "VIEWED"
                 : "OK";
+        boolean suggestAdvanceFollowUp = !terminal
+                && trip != null
+                && trip.getProposalLastViewedAt() != null
+                && trip.getProposalLastViewedAt().isAfter(now.minusSeconds(48 * 60 * 60))
+                && opp.getNextActionType() == OpportunityNextActionType.FOLLOW_UP;
         return AgencyOpportunityDTO.builder()
                 .id(opp.id)
                 .agencyId(opp.getAgency() != null ? opp.getAgency().id : null)
@@ -1147,8 +1075,10 @@ public class AgencyOpportunityService {
                                 ? nextActionAssignee.getFullName()
                                 : nextActionAssignee.getEmail())
                         : null)
+                .nextActionTaskId(opp.getNextActionTask() != null ? opp.getNextActionTask().id : null)
                 .missingNextAction(missingNextAction)
                 .nextActionOverdue(overdue)
+                .suggestAdvanceFollowUp(suggestAdvanceFollowUp)
                 .proposalCount(trip != null ? 1 : 0)
                 .proposalLastViewedAt(trip != null ? trip.getProposalLastViewedAt() : null)
                 .proposalViewCount(trip != null && trip.getProposalViewCount() != null

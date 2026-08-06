@@ -9,16 +9,12 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UpsertOpportunityTaskRequest {
+public class SetNextActionRequest {
+    private String actionKind;
     private String title;
-    private String status;
     private Instant dueAt;
     private UUID assigneeUserId;
-    private String taskType;
-    private String actionKind;
     private String note;
-    /** When true (default for quick create from opportunity), promote as next action. */
-    private Boolean asNextAction;
+    private String taskType;
     private String priority;
-    private String origin;
 }

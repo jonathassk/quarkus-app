@@ -216,6 +216,10 @@ public class AgencyOpportunity extends PanacheEntityBase {
     @JoinColumn(name = "next_action_assignee_id")
     private User nextActionAssignee;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "next_action_task_id")
+    private AgencyOpportunityTask nextActionTask;
+
     @Column(name = "lost_reason", columnDefinition = "TEXT")
     private String lostReason;
 

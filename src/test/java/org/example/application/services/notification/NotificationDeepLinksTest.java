@@ -52,10 +52,13 @@ class NotificationDeepLinksTest {
     }
 
     @Test
-    void tripInviteFallsBackToPlanWhenNoStoredDeepLink() {
-        UUID tripId = UUID.randomUUID();
+    void agendaTaskLinksToOpportunityOrAgenda() {
+        UUID oppId = UUID.randomUUID();
         assertEquals(
-                "/plan/" + tripId,
-                NotificationDeepLinks.resolve(NotificationKind.TRIP_INVITE, "TRIP", tripId));
+                "/business/opportunities/" + oppId,
+                NotificationDeepLinks.resolve(NotificationKind.AGENDA_TASK_ASSIGNED, "opportunity", oppId));
+        assertEquals(
+                "/business/agenda",
+                NotificationDeepLinks.resolve(NotificationKind.AGENDA_TASK_OVERDUE, "opportunity", null));
     }
 }

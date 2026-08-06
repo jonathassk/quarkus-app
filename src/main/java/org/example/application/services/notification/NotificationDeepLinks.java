@@ -23,6 +23,10 @@ public final class NotificationDeepLinks {
                 || kind == NotificationKind.PAYMENT_CONFIRMED) {
             return "/business/pipeline";
         }
+        if (kind == NotificationKind.AGENDA_TASK_ASSIGNED
+                || kind == NotificationKind.AGENDA_TASK_OVERDUE) {
+            return entityId != null ? "/business/opportunities/" + entityId : "/business/agenda";
+        }
         if (kind == NotificationKind.DOC_EXPIRING) {
             return "/settings";
         }

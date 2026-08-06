@@ -12,7 +12,9 @@ public enum NotificationKind {
     DOC_EXPIRING,
     PROPOSAL_SENT,
     PROPOSAL_APPROVED,
-    PAYMENT_CONFIRMED;
+    PAYMENT_CONFIRMED,
+    AGENDA_TASK_ASSIGNED,
+    AGENDA_TASK_OVERDUE;
 
     public static NotificationKind fromString(String value) {
         if (value == null || value.isBlank()) {

@@ -3,7 +3,13 @@ package org.example.domain.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.example.domain.enums.OpportunityNextActionType;
+import org.example.domain.enums.OpportunityTaskCompletionOutcome;
+import org.example.domain.enums.OpportunityTaskOrigin;
+import org.example.domain.enums.OpportunityTaskPriority;
 import org.example.domain.enums.OpportunityTaskStatus;
+import org.example.domain.enums.OpportunityTaskType;
+import org.example.domain.enums.OpportunityTaskWaitingOn;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
@@ -45,6 +51,44 @@ public class AgencyOpportunityTask extends PanacheEntityBase {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_user_id")
     private User assignee;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "task_type", nullable = false, length = 32)
+    @Builder.Default
+    private OpportunityTaskType taskType = OpportunityTaskType.COMMERCIAL;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "action_kind", length = 64)
+    private OpportunityNextActionType actionKind;
+
+    @Column(columnDefinition = "TEXT")
+    private String note;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "waiting_on", length = 32)
+    private OpportunityTaskWaitingOn waitingOn;
+
+    @Column(name = "is_next_action", nullable = false)
+    @Builder.Default
+    private boolean nextAction = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private OpportunityTaskOrigin origin = OpportunityTaskOrigin.MANUAL;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "completed_by_user_id")
+    private User completedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "completion_outcome", length = 64)
+    private OpportunityTaskCompletionOutcome completionOutcome;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private OpportunityTaskPriority priority = OpportunityTaskPriority.NORMAL;
 
     @Column(name = "completed_at")
     private Instant completedAt;

@@ -12,6 +12,7 @@ import org.example.application.dto.proposal.*;
 import org.example.application.services.B2bAuditService;
 import org.example.application.services.agency.AgencyOpportunityService;
 import org.example.application.services.agency.AgencyService;
+import org.example.application.services.agency.OpportunityTaskAutomationService;
 import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.*;
 import org.example.domain.enums.AgencyRole;
@@ -74,6 +75,8 @@ public class ProposalService {
     AgencyService agencyService;
     @Inject
     AgencyOpportunityService agencyOpportunityService;
+    @Inject
+    OpportunityTaskAutomationService taskAutomationService;
     @Inject
     B2bAuditService auditService;
     @Inject
@@ -194,6 +197,7 @@ public class ProposalService {
                 next == ProposalStatus.PENDING_PAYMENT
                         ? "Aguardando pagamento"
                         : "Confirmada");
+        taskAutomationService.onProposalApprovedForTrip(trip.id);
 
         String actorLabel = name + " <" + email + ">";
         String meta = "{\"proposalStatus\":\"" + next + "\""
@@ -538,6 +542,8 @@ public class ProposalService {
                 OpportunityActivityType.PROPOSAL_SENT,
                 "Proposta enviada ao cliente",
                 clientEmail);
+
+        taskAutomationService.onProposalSentForTrip(trip.id, trip.getProposalExpiresAt());
 
         // In-app para membros internos; e-mail do cliente já foi via white-label.
         List<UUID> internalRecipients = resolveAgencyRecipients(trip, userId);

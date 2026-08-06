@@ -7,6 +7,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import org.example.application.dto.proposal.commercial.*;
 import org.example.application.services.agency.AgencyService;
+import org.example.application.services.agency.OpportunityTaskAutomationService;
 import org.example.application.services.proposal.pricing.PricingEngine;
 import org.example.domain.entity.*;
 import org.example.domain.enums.*;
@@ -31,6 +32,7 @@ public class CommercialProposalService {
             Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
 
     @Inject AgencyService agencyService;
+    @Inject OpportunityTaskAutomationService taskAutomationService;
     @Inject UserRepository userRepository;
     @Inject TripRepository tripRepository;
     @Inject AgencyOpportunityRepository opportunityRepository;
@@ -644,6 +646,7 @@ public class CommercialProposalService {
         }
         if (proposal.getOpportunity() != null) {
             proposal.getOpportunity().setStage(OpportunityStage.NEGOTIATING);
+            taskAutomationService.onChangeRequested(proposal.getOpportunity());
         }
         return toPublicDto(proposal, version);
     }
@@ -724,6 +727,9 @@ public class CommercialProposalService {
             trip.setAllowNegotiation(version.isAllowNegotiation());
             trip.setShareCode(proposal.getShareCode());
             syncTripMirror(opt);
+        }
+        if (proposal.getOpportunity() != null) {
+            taskAutomationService.onProposalSent(proposal.getOpportunity(), version.getExpiresAt());
         }
         return toDto(proposal, true);
     }
@@ -907,6 +913,7 @@ public class CommercialProposalService {
             AgencyOpportunity opp = proposal.getOpportunity();
             opp.setStage(OpportunityStage.WON);
             opp.setWonAt(Instant.now());
+            taskAutomationService.onProposalApproved(opp);
         }
 
         return toPublicDto(proposal, version);
