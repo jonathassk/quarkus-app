@@ -84,6 +84,12 @@ public class AgencyOpportunityDTO {
     private Integer proposalCount;
     private Instant proposalLastViewedAt;
     private Long proposalViewCount;
+    /** Snapshot da Trip vinculada (aba Propostas). */
+    private String proposalStatus;
+    private BigDecimal proposalFinalPrice;
+    private BigDecimal proposalBaseCost;
+    private Instant proposalSentAt;
+    private Instant proposalExpiresAt;
     private String health; // OK | OVERDUE | STALE | VIEWED | WAITING
     private String lostReason;
     private String lostReasonCode;

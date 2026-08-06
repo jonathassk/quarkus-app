@@ -66,4 +66,11 @@ public class AgencyOpportunityRepository implements PanacheRepositoryBase<Agency
                 agencyId,
                 clientId);
     }
+
+    public java.util.Optional<AgencyOpportunity> findByTripId(UUID tripId) {
+        if (tripId == null) {
+            return java.util.Optional.empty();
+        }
+        return find("trip.id = ?1", tripId).firstResultOptional();
+    }
 }

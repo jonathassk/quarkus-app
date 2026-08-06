@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.application.dto.agency.AgencyAnalyticsDTO;
 import org.example.application.dto.proposal.*;
 import org.example.application.services.B2bAuditService;
+import org.example.application.services.agency.AgencyOpportunityService;
 import org.example.application.services.agency.AgencyService;
 import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.*;
@@ -18,6 +19,7 @@ import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentVisibility;
 import org.example.domain.enums.NotificationKind;
 import org.example.domain.enums.OperationStatus;
+import org.example.domain.enums.OpportunityActivityType;
 import org.example.domain.enums.PipelineScope;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.repository.AgencyClientRepository;
@@ -71,6 +73,8 @@ public class ProposalService {
     @Inject
     AgencyService agencyService;
     @Inject
+    AgencyOpportunityService agencyOpportunityService;
+    @Inject
     B2bAuditService auditService;
     @Inject
     org.example.infrastructure.email.EmailWorkerInvoker emailWorkerInvoker;
@@ -117,6 +121,11 @@ public class ProposalService {
         int total = trip.getProposalViewCount() == null ? 0 : trip.getProposalViewCount();
         trip.setProposalViewCount(total + 1);
         trip.setProposalLastViewedAt(now);
+        agencyOpportunityService.recordActivityForTrip(
+                trip.id,
+                OpportunityActivityType.PROPOSAL_VIEWED,
+                "Proposta visualizada pelo cliente",
+                null);
     }
 
     @Transactional
@@ -177,6 +186,14 @@ public class ProposalService {
         trip.setProposalStatus(next);
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
+        agencyOpportunityService.syncStageFromProposalStatus(trip.id, next);
+        agencyOpportunityService.recordActivityForTrip(
+                trip.id,
+                OpportunityActivityType.APPROVED,
+                "Proposta aprovada pelo cliente",
+                next == ProposalStatus.PENDING_PAYMENT
+                        ? "Aguardando pagamento"
+                        : "Confirmada");
 
         String actorLabel = name + " <" + email + ">";
         String meta = "{\"proposalStatus\":\"" + next + "\""
@@ -243,6 +260,7 @@ public class ProposalService {
             trip.setProposalClientEmail(email);
         }
         tripRepository.persist(trip);
+        agencyOpportunityService.syncStageFromProposalStatus(trip.id, ProposalStatus.REJECTED, reason);
 
         String actorLabel = name != null && email != null
                 ? name + " <" + email + ">"
@@ -280,6 +298,26 @@ public class ProposalService {
                 && status != ProposalStatus.DRAFT
                 && status != ProposalStatus.NEGOTIATING) {
             throw new BadRequestException("Proposta não está disponível para esta ação (status: " + status + ")");
+        }
+    }
+
+    /** Preço travado após o cliente aceitar (pagamento / confirmada / viagem). */
+    public static boolean isPricingLocked(ProposalStatus status) {
+        if (status == null) {
+            return false;
+        }
+        return status == ProposalStatus.PENDING_PAYMENT
+                || status == ProposalStatus.APPROVED
+                || status == ProposalStatus.CONFIRMED
+                || status == ProposalStatus.IN_TRIP
+                || status == ProposalStatus.COMPLETED;
+    }
+
+    private void assertPricingEditable(Trip trip) {
+        ProposalStatus status = trip.getProposalStatus() != null ? trip.getProposalStatus() : ProposalStatus.DRAFT;
+        if (isPricingLocked(status)) {
+            throw new BadRequestException(
+                    "O valor do pacote não pode ser alterado após a proposta ser aceita (status: " + status + ")");
         }
     }
 
@@ -338,10 +376,22 @@ public class ProposalService {
     @Transactional
     public Trip updatePricing(UUID tripId, UUID userId, UpdateTripPricingRequest request) {
         Trip trip = requireAgencyTripAccess(tripId, userId);
-        if (request.getBaseCost() == null) {
+        assertPricingEditable(trip);
+
+        BigDecimal base;
+        if (request.getBaseCostItems() != null) {
+            List<BaseCostItemDTO> items = normalizeBaseCostItems(request.getBaseCostItems());
+            base = items.stream()
+                    .map(i -> i.getAmount() != null ? i.getAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
+            trip.setBaseCostItems(items);
+        } else if (request.getBaseCost() != null) {
+            base = request.getBaseCost();
+        } else {
             throw new BadRequestException("baseCost is required");
         }
-        BigDecimal base = request.getBaseCost();
+
         BigDecimal markup = request.getMarkupPercentage();
         if (markup == null && trip.getAgency() != null && trip.getAgency().getMarkupPercentage() != null) {
             markup = trip.getAgency().getMarkupPercentage();
@@ -362,6 +412,46 @@ public class ProposalService {
                 "{\"baseCost\":" + base + ",\"finalPrice\":" + finalPrice + "}",
                 "Preço da proposta atualizado", null);
         return trip;
+    }
+
+    private List<BaseCostItemDTO> normalizeBaseCostItems(List<BaseCostItemDTO> raw) {
+        if (raw == null) {
+            return List.of();
+        }
+        List<BaseCostItemDTO> out = new ArrayList<>();
+        for (BaseCostItemDTO item : raw) {
+            if (item == null) continue;
+            String label = item.getLabel() != null ? item.getLabel().trim() : "";
+            if (label.isEmpty()) {
+                label = "Item";
+            }
+            BigDecimal amount = item.getAmount() != null ? item.getAmount() : BigDecimal.ZERO;
+            if (amount.compareTo(BigDecimal.ZERO) < 0) {
+                amount = BigDecimal.ZERO;
+            }
+            amount = amount.setScale(2, RoundingMode.HALF_UP);
+            String code = item.getCode() != null ? item.getCode().trim().toUpperCase() : "CUSTOM";
+            if (!List.of("FLIGHT", "HOTEL", "INSURANCE", "TOURS", "CUSTOM", "OTHER").contains(code)) {
+                code = "CUSTOM";
+            }
+            String id = item.getId() != null && !item.getId().isBlank()
+                    ? item.getId().trim()
+                    : UUID.randomUUID().toString();
+            out.add(BaseCostItemDTO.builder()
+                    .id(id)
+                    .code(code)
+                    .label(label)
+                    .amount(amount)
+                    .build());
+        }
+        return out;
+    }
+
+    public List<ProposalTierDTO> listTiers(UUID tripId, UUID userId) {
+        requireAgencyTripAccess(tripId, userId);
+        return tierRepository.findByTripId(tripId).stream()
+                .map(this::toTierDto)
+                .toList();
     }
 
     @Transactional
@@ -442,6 +532,12 @@ public class ProposalService {
                 "{\"proposalStatus\":\"SENT\",\"emailQueued\":" + queued
                         + ",\"allowNegotiation\":" + trip.isAllowNegotiation() + "}",
                 "Proposta enviada para " + clientEmail, null);
+
+        agencyOpportunityService.recordActivityForTrip(
+                trip.id,
+                OpportunityActivityType.PROPOSAL_SENT,
+                "Proposta enviada ao cliente",
+                clientEmail);
 
         // In-app para membros internos; e-mail do cliente já foi via white-label.
         List<UUID> internalRecipients = resolveAgencyRecipients(trip, userId);
@@ -582,6 +678,10 @@ public class ProposalService {
         tripRepository.persist(trip);
 
         ProposalStatus effective = trip.getProposalStatus();
+        if (status != null) {
+            agencyOpportunityService.syncStageFromProposalStatus(trip.id, effective);
+        }
+
         B2bTripLogAction action = switch (effective) {
             case APPROVED, PENDING_PAYMENT -> B2bTripLogAction.PROPOSAL_APPROVED;
             case CONFIRMED, IN_TRIP, COMPLETED -> B2bTripLogAction.PROPOSAL_CONFIRMED;

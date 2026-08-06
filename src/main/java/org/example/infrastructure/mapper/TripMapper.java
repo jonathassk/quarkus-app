@@ -36,6 +36,7 @@ public class TripMapper {
                         skip(destination.getCreatedBy());
                         skip(destination.getUsers());
                         skip(destination.getStatus());
+                        skip(destination.getBaseCostItems());
                     }
                 });
         return modelMapper;
@@ -72,6 +73,7 @@ public class TripMapper {
         dto.setAllowNegotiation(trip.isAllowNegotiation());
         dto.setOperationStatus(trip.getOperationStatus());
         dto.setBaseCost(trip.getBaseCost());
+        dto.setBaseCostItems(trip.getBaseCostItems());
         dto.setFinalPrice(trip.getFinalPrice());
         dto.setShareCode(trip.getShareCode());
         dto.setCurrency(trip.getCurrency());

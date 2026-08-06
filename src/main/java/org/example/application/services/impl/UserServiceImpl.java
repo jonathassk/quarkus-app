@@ -19,6 +19,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void validatePassword(String password) {
+        if (password == null || password.length() < 8) {
+            log.warn("Password validation failed: too short");
+            throw new IllegalArgumentException("Password must be at least 8 characters long.");
+        }
+        if (password.length() > 100) {
+            log.warn("Password validation failed: too long");
+            throw new IllegalArgumentException("Password must be at most 100 characters long.");
+        }
         if (!password.matches(".*[A-Z].*")) {
             log.warn("Password validation failed: missing uppercase letter");
             throw new IllegalArgumentException("Password must contain at least one uppercase letter.");

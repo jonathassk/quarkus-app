@@ -9,15 +9,20 @@ import jakarta.ws.rs.NotFoundException;
 import org.example.application.dto.agency.AddOpportunityActivityRequest;
 import org.example.application.dto.agency.AgencyOpportunityActivityDTO;
 import org.example.application.dto.agency.AgencyOpportunityDTO;
+import org.example.application.dto.agency.AgencyOpportunityFileDTO;
+import org.example.application.dto.agency.AgencyOpportunityTaskDTO;
 import org.example.application.dto.agency.DuplicateContactCheckResponse;
 import org.example.application.dto.agency.MarkOpportunityLostRequest;
 import org.example.application.dto.agency.UpsertAgencyOpportunityRequest;
+import org.example.application.dto.agency.UpsertOpportunityTaskRequest;
 import org.example.application.services.proposal.ProposalService;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyClient;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.entity.AgencyOpportunity;
 import org.example.domain.entity.AgencyOpportunityActivity;
+import org.example.domain.entity.AgencyOpportunityFile;
+import org.example.domain.entity.AgencyOpportunityTask;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.User;
 import org.example.domain.entity.Workspace;
@@ -25,10 +30,12 @@ import org.example.domain.entity.WorkspaceMember;
 import org.example.domain.enums.ContactStatus;
 import org.example.domain.enums.AgencyRole;
 import org.example.domain.enums.OpportunityActivityType;
+import org.example.domain.enums.OpportunityFileKind;
 import org.example.domain.enums.OpportunityLostReasonCode;
 import org.example.domain.enums.OpportunityNextActionType;
 import org.example.domain.enums.OpportunityPriority;
 import org.example.domain.enums.OpportunityStage;
+import org.example.domain.enums.OpportunityTaskStatus;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.QualificationStatus;
 import org.example.domain.enums.TripStatus;
@@ -36,8 +43,12 @@ import org.example.domain.enums.WorkspaceRole;
 import org.example.domain.repository.AgencyClientRepository;
 import org.example.domain.repository.AgencyOpportunityRepository;
 import org.example.domain.repository.AgencyOpportunityActivityRepository;
+import org.example.domain.repository.AgencyOpportunityFileRepository;
+import org.example.domain.repository.AgencyOpportunityTaskRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
+import org.example.infrastructure.storage.ObjectStorageService;
+import org.example.utils.DocumentUploadSupport;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -72,6 +83,12 @@ public class AgencyOpportunityService {
     TripRepository tripRepository;
     @Inject
     UserRepository userRepository;
+    @Inject
+    AgencyOpportunityTaskRepository taskRepository;
+    @Inject
+    AgencyOpportunityFileRepository fileRepository;
+    @Inject
+    ObjectStorageService objectStorageService;
 
     public List<AgencyOpportunityDTO> list(
             UUID userId,
@@ -243,6 +260,68 @@ public class AgencyOpportunityService {
         recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.WON,
                 "Oportunidade marcada como ganha", null);
         return toDto(opp);
+    }
+
+    /**
+     * Alinha o estágio da solicitação ao status da proposta (Trip).
+     * Confirmada → Ganho; cancelada/rejeitada/perdida → Perdido.
+     */
+    @Transactional
+    public void syncStageFromProposalStatus(UUID tripId, ProposalStatus proposalStatus) {
+        syncStageFromProposalStatus(tripId, proposalStatus, null);
+    }
+
+    @Transactional
+    public void syncStageFromProposalStatus(
+            UUID tripId, ProposalStatus proposalStatus, String lostReasonOverride) {
+        if (tripId == null || proposalStatus == null) {
+            return;
+        }
+        opportunityRepository.findByTripId(tripId).ifPresent(opp -> {
+            OpportunityStage current = opp.getStage() != null ? opp.getStage() : OpportunityStage.NEW;
+            switch (proposalStatus) {
+                case CONFIRMED, IN_TRIP, COMPLETED, APPROVED -> {
+                    if (current == OpportunityStage.WON) {
+                        return;
+                    }
+                    applyStage(opp, OpportunityStage.WON, null);
+                    opp.setLastActivityAt(Instant.now());
+                    opportunityRepository.persist(opp);
+                    recordActivity(opp, null, OpportunityActivityType.WON,
+                            "Marcada como ganha (proposta confirmada)", null);
+                }
+                case REJECTED, LOST, CANCELLED -> {
+                    if (current == OpportunityStage.LOST) {
+                        return;
+                    }
+                    OpportunityLostReasonCode code = proposalStatus == ProposalStatus.CANCELLED
+                            ? OpportunityLostReasonCode.CLIENT_CANCELLED
+                            : OpportunityLostReasonCode.OTHER;
+                    String reason = blankToNull(lostReasonOverride);
+                    if (reason == null && opp.getTrip() != null) {
+                        reason = blankToNull(opp.getTrip().getProposalRejectReason());
+                    }
+                    if (reason == null) {
+                        reason = proposalStatus == ProposalStatus.REJECTED
+                                ? "Proposta rejeitada pelo cliente"
+                                : proposalStatus == ProposalStatus.CANCELLED
+                                    ? "Proposta/viagem cancelada"
+                                    : "Proposta marcada como perdida";
+                    }
+                    opp.setLostReasonCode(code);
+                    opp.setLostReason(reason);
+                    applyStage(opp, OpportunityStage.LOST, reason);
+                    opp.setLastActivityAt(Instant.now());
+                    opportunityRepository.persist(opp);
+                    recordActivity(opp, null, OpportunityActivityType.LOST,
+                            "Marcada como perdida (proposta " + proposalStatus.name().toLowerCase() + ")",
+                            reason);
+                }
+                default -> {
+                    // PENDING_PAYMENT e demais: não fecha a solicitação ainda
+                }
+            }
+        });
     }
 
     /**
@@ -668,6 +747,14 @@ public class AgencyOpportunityService {
         String title = blankToNull(request.getTitle());
         AgencyOpportunityActivity activity = recordActivity(opp, userRepository.findById(userId), type,
                 title != null ? title : type.name(), blankToNull(request.getBody()));
+        // Primeiro contato registrado → Qualificando
+        if (opp.getStage() == OpportunityStage.NEW
+                && List.of(OpportunityActivityType.NOTE, OpportunityActivityType.CALL,
+                OpportunityActivityType.MESSAGE).contains(type)) {
+            applyStage(opp, OpportunityStage.QUALIFYING, null);
+            recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.STAGE_CHANGED,
+                    "Etapa alterada para QUALIFYING", null);
+        }
         opp.setLastActivityAt(Instant.now());
         opportunityRepository.persist(opp);
         return toActivityDto(activity);
@@ -714,6 +801,260 @@ public class AgencyOpportunityService {
                 .build();
         activityRepository.persist(activity);
         return activity;
+    }
+
+    /**
+     * Atividade na oportunidade ligada a uma Trip (envio/visualização/aprovação da proposta).
+     */
+    @Transactional
+    public void recordActivityForTrip(
+            UUID tripId, OpportunityActivityType type, String title, String body) {
+        if (tripId == null || type == null) {
+            return;
+        }
+        opportunityRepository.findByTripId(tripId).ifPresent(opp -> {
+            recordActivity(opp, null, type, title, body);
+            if (type == OpportunityActivityType.PROPOSAL_SENT
+                    && (opp.getStage() == OpportunityStage.NEW
+                    || opp.getStage() == OpportunityStage.QUALIFYING
+                    || opp.getStage() == OpportunityStage.QUOTING)) {
+                applyStage(opp, OpportunityStage.NEGOTIATING, null);
+            }
+            opp.setLastActivityAt(Instant.now());
+            opportunityRepository.persist(opp);
+        });
+    }
+
+    // ── Tasks ───────────────────────────────────────────────────────────────
+
+    public List<AgencyOpportunityTaskDTO> listTasks(UUID userId, UUID opportunityId) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        return taskRepository.listByOpportunity(opportunityId).stream()
+                .map(this::toTaskDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public AgencyOpportunityTaskDTO createTask(
+            UUID userId, UUID opportunityId, UpsertOpportunityTaskRequest request) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
+        if (request == null || request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new BadRequestException("title is required");
+        }
+        User assignee = null;
+        if (request.getAssigneeUserId() != null) {
+            assignee = userRepository.findById(request.getAssigneeUserId());
+            if (assignee == null) {
+                throw new NotFoundException("Assignee not found");
+            }
+        }
+        AgencyOpportunityTask task = AgencyOpportunityTask.builder()
+                .opportunity(opp)
+                .agency(opp.getAgency())
+                .title(request.getTitle().trim())
+                .status(OpportunityTaskStatus.OPEN)
+                .dueAt(request.getDueAt())
+                .assignee(assignee)
+                .build();
+        taskRepository.persist(task);
+        recordActivity(opp, userRepository.findById(userId), OpportunityActivityType.TASK,
+                "Tarefa criada: " + task.getTitle(), null);
+        opp.setLastActivityAt(Instant.now());
+        if (opp.getNextActionAt() == null && request.getDueAt() != null) {
+            opp.setNextActionAt(request.getDueAt());
+            opp.setNextActionNote(task.getTitle());
+            if (assignee != null) {
+                opp.setNextActionAssignee(assignee);
+            }
+        }
+        opportunityRepository.persist(opp);
+        return toTaskDto(task);
+    }
+
+    @Transactional
+    public AgencyOpportunityTaskDTO updateTask(
+            UUID userId, UUID opportunityId, UUID taskId, UpsertOpportunityTaskRequest request) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        AgencyOpportunityTask task = taskRepository.findById(taskId);
+        if (task == null || task.getOpportunity() == null || !opportunityId.equals(task.getOpportunity().id)) {
+            throw new NotFoundException("Task not found");
+        }
+        if (request == null) {
+            throw new BadRequestException("body is required");
+        }
+        if (request.getTitle() != null && !request.getTitle().isBlank()) {
+            task.setTitle(request.getTitle().trim());
+        }
+        if (request.getDueAt() != null) {
+            task.setDueAt(request.getDueAt());
+        }
+        if (request.getAssigneeUserId() != null) {
+            User assignee = userRepository.findById(request.getAssigneeUserId());
+            if (assignee == null) {
+                throw new NotFoundException("Assignee not found");
+            }
+            task.setAssignee(assignee);
+        }
+        if (request.getStatus() != null) {
+            OpportunityTaskStatus status = OpportunityTaskStatus.fromString(request.getStatus());
+            task.setStatus(status);
+            if (status == OpportunityTaskStatus.DONE) {
+                task.setCompletedAt(Instant.now());
+            } else {
+                task.setCompletedAt(null);
+            }
+        }
+        taskRepository.persist(task);
+        return toTaskDto(task);
+    }
+
+    @Transactional
+    public void deleteTask(UUID userId, UUID opportunityId, UUID taskId) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        AgencyOpportunityTask task = taskRepository.findById(taskId);
+        if (task == null || task.getOpportunity() == null || !opportunityId.equals(task.getOpportunity().id)) {
+            throw new NotFoundException("Task not found");
+        }
+        taskRepository.delete(task);
+    }
+
+    // ── Files ───────────────────────────────────────────────────────────────
+
+    public List<AgencyOpportunityFileDTO> listFiles(UUID userId, UUID opportunityId) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        return fileRepository.listByOpportunity(opportunityId).stream()
+                .map(f -> toFileDto(f, false))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public AgencyOpportunityFileDTO uploadFile(
+            UUID userId,
+            UUID opportunityId,
+            String fileName,
+            String contentType,
+            byte[] bytes,
+            String kindHint) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
+        if (!objectStorageService.isConfigured()) {
+            throw new BadRequestException("Document storage is not configured");
+        }
+        var resolved = DocumentUploadSupport.resolve(fileName, contentType);
+        if (resolved.isEmpty()) {
+            throw new BadRequestException(
+                    DocumentUploadSupport.unsupportedTypeMessage(contentType, fileName));
+        }
+        DocumentUploadSupport.ResolvedUpload upload = resolved.get();
+        if (bytes == null || bytes.length == 0) {
+            throw new BadRequestException("File is empty");
+        }
+        if (bytes.length > DocumentUploadSupport.MAX_UPLOAD_BYTES) {
+            throw new BadRequestException("File exceeds 10 MB limit");
+        }
+        String extension = DocumentUploadSupport.extractExtension(upload.fileName());
+        String storageKey = "opportunities/" + opportunityId + "/files/"
+                + UUID.randomUUID() + extension;
+        objectStorageService.putObject(storageKey, bytes, upload.contentType());
+        OpportunityFileKind kind = kindHint != null && !kindHint.isBlank()
+                ? OpportunityFileKind.fromString(kindHint)
+                : OpportunityFileKind.fromContentType(upload.contentType(), upload.fileName());
+        User uploader = userRepository.findById(userId);
+        AgencyOpportunityFile file = AgencyOpportunityFile.builder()
+                .opportunity(opp)
+                .agency(opp.getAgency())
+                .fileName(upload.fileName())
+                .contentType(upload.contentType())
+                .sizeBytes((long) bytes.length)
+                .storageKey(storageKey)
+                .kind(kind)
+                .uploadedBy(uploader)
+                .build();
+        fileRepository.persist(file);
+        recordActivity(opp, uploader, OpportunityActivityType.OTHER,
+                "Arquivo anexado: " + file.getFileName(), kind.name());
+        opp.setLastActivityAt(Instant.now());
+        opportunityRepository.persist(opp);
+        return toFileDto(file, true);
+    }
+
+    public AgencyOpportunityFileDTO getFileView(UUID userId, UUID opportunityId, UUID fileId) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        AgencyOpportunityFile file = fileRepository.findById(fileId);
+        if (file == null || file.getOpportunity() == null || !opportunityId.equals(file.getOpportunity().id)) {
+            throw new NotFoundException("File not found");
+        }
+        return toFileDto(file, true);
+    }
+
+    @Transactional
+    public void deleteFile(UUID userId, UUID opportunityId, UUID fileId) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        requireAccessibleOpportunity(member, userId, opportunityId);
+        AgencyOpportunityFile file = fileRepository.findById(fileId);
+        if (file == null || file.getOpportunity() == null || !opportunityId.equals(file.getOpportunity().id)) {
+            throw new NotFoundException("File not found");
+        }
+        try {
+            objectStorageService.deleteObject(file.getStorageKey());
+        } catch (Exception ignored) {
+            // best-effort
+        }
+        fileRepository.delete(file);
+    }
+
+    private AgencyOpportunityTaskDTO toTaskDto(AgencyOpportunityTask task) {
+        User assignee = task.getAssignee();
+        boolean overdue = task.getStatus() == OpportunityTaskStatus.OPEN
+                && task.getDueAt() != null
+                && task.getDueAt().isBefore(Instant.now());
+        return AgencyOpportunityTaskDTO.builder()
+                .id(task.id)
+                .opportunityId(task.getOpportunity() != null ? task.getOpportunity().id : null)
+                .title(task.getTitle())
+                .status(task.getStatus() != null ? task.getStatus().name() : OpportunityTaskStatus.OPEN.name())
+                .dueAt(task.getDueAt())
+                .assigneeUserId(assignee != null ? assignee.id : null)
+                .assigneeName(assignee != null
+                        ? (assignee.getFullName() != null ? assignee.getFullName() : assignee.getEmail())
+                        : null)
+                .completedAt(task.getCompletedAt())
+                .createdAt(task.getCreatedAt())
+                .updatedAt(task.getUpdatedAt())
+                .overdue(overdue)
+                .build();
+    }
+
+    private AgencyOpportunityFileDTO toFileDto(AgencyOpportunityFile file, boolean withViewUrl) {
+        User uploader = file.getUploadedBy();
+        String viewUrl = null;
+        if (withViewUrl && objectStorageService.isConfigured()) {
+            try {
+                viewUrl = objectStorageService.presignGet(file.getStorageKey());
+            } catch (Exception ignored) {
+                viewUrl = null;
+            }
+        }
+        return AgencyOpportunityFileDTO.builder()
+                .id(file.id)
+                .opportunityId(file.getOpportunity() != null ? file.getOpportunity().id : null)
+                .fileName(file.getFileName())
+                .contentType(file.getContentType())
+                .sizeBytes(file.getSizeBytes())
+                .kind(file.getKind() != null ? file.getKind().name() : OpportunityFileKind.OTHER.name())
+                .uploadedByUserId(uploader != null ? uploader.id : null)
+                .uploadedByName(uploader != null
+                        ? (uploader.getFullName() != null ? uploader.getFullName() : uploader.getEmail())
+                        : null)
+                .createdAt(file.getCreatedAt())
+                .viewUrl(viewUrl)
+                .build();
     }
 
     private AgencyOpportunityActivityDTO toActivityDto(AgencyOpportunityActivity activity) {
@@ -863,6 +1204,13 @@ public class AgencyOpportunityService {
                 .proposalViewCount(trip != null && trip.getProposalViewCount() != null
                         ? trip.getProposalViewCount().longValue()
                         : 0L)
+                .proposalStatus(trip != null && trip.getProposalStatus() != null
+                        ? trip.getProposalStatus().name()
+                        : null)
+                .proposalFinalPrice(trip != null ? trip.getFinalPrice() : null)
+                .proposalBaseCost(trip != null ? trip.getBaseCost() : null)
+                .proposalSentAt(trip != null ? trip.getProposalSentAt() : null)
+                .proposalExpiresAt(trip != null ? trip.getProposalExpiresAt() : null)
                 .health(health)
                 .lostReason(opp.getLostReason())
                 .lostReasonCode(opp.getLostReasonCode() != null ? opp.getLostReasonCode().name() : null)

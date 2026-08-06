@@ -5,6 +5,7 @@ import java.util.UUID;
 import lombok.*;
 import org.example.application.dto.trip.TripSegmentDTO;
 import org.example.application.dto.trip.TripUserDTO;
+import org.example.application.dto.proposal.BaseCostItemDTO;
 import org.example.domain.enums.OperationStatus;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.TripStatus;
@@ -44,6 +45,7 @@ public class TripResponseDTO {
     private boolean allowNegotiation;
     private OperationStatus operationStatus;
     private BigDecimal baseCost;
+    private List<BaseCostItemDTO> baseCostItems;
     private BigDecimal finalPrice;
     private String shareCode;
     private String currency;

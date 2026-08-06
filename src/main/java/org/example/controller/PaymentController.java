@@ -8,6 +8,7 @@ import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
 import com.stripe.param.checkout.SessionRetrieveParams;
@@ -343,7 +344,18 @@ public class PaymentController {
                 paramsBuilder.putMetadata("trial", "true");
             }
 
-            Session session = Session.create(paramsBuilder.build());
+            String idempotencyKey = resolveIdempotencyKey(
+                    headers.getHeaderString("Idempotency-Key"),
+                    "checkout:"
+                            + userIdOpt.get()
+                            + ":"
+                            + request.getPaymentType()
+                            + ":"
+                            + request.getTargetId()
+                            + (withTrial ? ":trial" : ""));
+            RequestOptions requestOptions =
+                    RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
+            Session session = Session.create(paramsBuilder.build(), requestOptions);
 
             return Response.ok(new PaymentResponseDTO(session.getUrl())).build();
 
@@ -936,5 +948,14 @@ public class PaymentController {
             return "B2B_TEAM";
         }
         return "B2B_PRO";
+    }
+
+    /** Stripe aceita no máx. 255 chars; prefira header do cliente, senão chave estável do escopo. */
+    private static String resolveIdempotencyKey(String headerValue, String fallback) {
+        String key = headerValue != null && !headerValue.isBlank() ? headerValue.trim() : fallback;
+        if (key.length() > 255) {
+            return key.substring(0, 255);
+        }
+        return key;
     }
 }

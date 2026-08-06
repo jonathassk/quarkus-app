@@ -3,10 +3,13 @@ package org.example.domain.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.example.application.dto.proposal.BaseCostItemDTO;
 import org.example.domain.enums.OperationStatus;
 import org.example.domain.enums.ProposalStatus;
 import org.example.domain.enums.TripStatus;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -124,6 +127,14 @@ public class Trip extends PanacheEntityBase {
 
     @Column(name = "base_cost", precision = 12, scale = 2)
     private BigDecimal baseCost;
+
+    /**
+     * Breakdown do custo base (voo, hospedagem, seguro, passeios, extras).
+     * A soma deve coincidir com {@link #baseCost}.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "base_cost_items", columnDefinition = "jsonb")
+    private List<BaseCostItemDTO> baseCostItems;
 
     @Column(name = "final_price", precision = 12, scale = 2)
     private BigDecimal finalPrice;

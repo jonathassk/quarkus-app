@@ -2,6 +2,7 @@ package org.example.application.services.proposal;
 
 import com.stripe.Stripe;
 import com.stripe.model.checkout.Session;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.checkout.SessionCreateParams;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -14,6 +15,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.example.application.dto.proposal.ProposalCheckoutRequest;
 import org.example.application.dto.proposal.ProposalCheckoutResponse;
 import org.example.application.services.B2bAuditService;
+import org.example.application.services.agency.AgencyOpportunityService;
 import org.example.application.services.notification.NotificationService;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.entity.Trip;
@@ -59,6 +61,8 @@ public class ProposalPaymentService {
     @Inject
     AgencyMemberRepository agencyMemberRepository;
     @Inject
+    AgencyOpportunityService agencyOpportunityService;
+    @Inject
     B2bAuditService auditService;
     @Inject
     NotificationService notificationService;
@@ -80,6 +84,12 @@ public class ProposalPaymentService {
 
     @Transactional
     public ProposalCheckoutResponse startCheckout(String shareCode, ProposalCheckoutRequest request) {
+        return startCheckout(shareCode, request, null);
+    }
+
+    @Transactional
+    public ProposalCheckoutResponse startCheckout(
+            String shareCode, ProposalCheckoutRequest request, String idempotencyKeyHeader) {
         if (!isStripeConfigured()) {
             throw new ServiceUnavailableException("Payment service is not configured");
         }
@@ -109,6 +119,39 @@ public class ProposalPaymentService {
         String currency = trip.getCurrency() != null && !trip.getCurrency().isBlank()
                 ? trip.getCurrency().trim().toUpperCase()
                 : "BRL";
+
+        // Reusa sessão Stripe aberta (evita cobranças duplicadas em double-submit).
+        Optional<TripPayment> openPending =
+                tripPaymentRepository.findLatestPendingWithSession(trip.id, kind);
+        if (openPending.isPresent()) {
+            TripPayment existing = openPending.get();
+            try {
+                Stripe.apiKey = apiKey.orElse("").trim();
+                Session existingSession = Session.retrieve(existing.getStripeSessionId());
+                if ("open".equalsIgnoreCase(existingSession.getStatus())
+                        && existingSession.getUrl() != null
+                        && !existingSession.getUrl().isBlank()) {
+                    log.info(
+                            "Reusing open proposal checkout tripId={} paymentId={} session={}",
+                            trip.id,
+                            existing.id,
+                            existing.getStripeSessionId());
+                    return ProposalCheckoutResponse.builder()
+                            .checkoutUrl(existingSession.getUrl())
+                            .paymentId(existing.id)
+                            .kind(kind)
+                            .amount(existing.getAmount() != null ? existing.getAmount() : amount)
+                            .currency(currency)
+                            .build();
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "Could not reuse pending checkout paymentId={} session={}: {}",
+                        existing.id,
+                        existing.getStripeSessionId(),
+                        e.getMessage());
+            }
+        }
 
         TripPayment payment = TripPayment.builder()
                 .trip(trip)
@@ -169,7 +212,33 @@ public class ProposalPaymentService {
                     .putMetadata("paymentKind", kind.name())
                     .build();
 
-            Session session = Session.create(params);
+            String idempotencyKey = resolveIdempotencyKey(
+                    idempotencyKeyHeader,
+                    "proposal-checkout:" + shareCode + ":" + kind.name());
+            RequestOptions requestOptions =
+                    RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
+            Session session = Session.create(params, requestOptions);
+
+            Optional<TripPayment> alreadyLinked =
+                    tripPaymentRepository.findByStripeSessionId(session.getId());
+            if (alreadyLinked.isPresent() && !alreadyLinked.get().id.equals(payment.id)) {
+                payment.setStatus(TripPaymentStatus.FAILED);
+                tripPaymentRepository.persist(payment);
+                TripPayment linked = alreadyLinked.get();
+                log.info(
+                        "Idempotent proposal checkout reused tripId={} paymentId={} session={}",
+                        trip.id,
+                        linked.id,
+                        session.getId());
+                return ProposalCheckoutResponse.builder()
+                        .checkoutUrl(session.getUrl())
+                        .paymentId(linked.id)
+                        .kind(kind)
+                        .amount(linked.getAmount() != null ? linked.getAmount() : amount)
+                        .currency(currency)
+                        .build();
+            }
+
             payment.setStripeSessionId(session.getId());
             tripPaymentRepository.persist(payment);
 
@@ -229,6 +298,7 @@ public class ProposalPaymentService {
         }
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
+        agencyOpportunityService.syncStageFromProposalStatus(trip.id, ProposalStatus.CONFIRMED);
 
         auditService.recordExternalActor(
                 trip,
@@ -370,5 +440,13 @@ public class ProposalPaymentService {
 
     private static String withSessionIdParam(String url) {
         return url + (url.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
+    }
+
+    private static String resolveIdempotencyKey(String headerValue, String fallback) {
+        String key = headerValue != null && !headerValue.isBlank() ? headerValue.trim() : fallback;
+        if (key.length() > 255) {
+            return key.substring(0, 255);
+        }
+        return key;
     }
 }

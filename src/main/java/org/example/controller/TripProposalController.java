@@ -52,6 +52,16 @@ public class TripProposalController {
                         proposalService.updatePricing(tripId, userId, request))).build());
     }
 
+    @GET
+    @Path("/{tripId}/tiers")
+    @Operation(summary = "Listar tiers da proposta")
+    public Response listTiers(
+            @PathParam("tripId") UUID tripId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(proposalService.listTiers(tripId, userId)).build());
+    }
+
     @PUT
     @Path("/{tripId}/tiers")
     @Transactional

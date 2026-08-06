@@ -91,9 +91,13 @@ public class PublicProposalController {
     @Operation(summary = "Iniciar checkout Stripe (sinal ou valor cheio) após aprovação")
     public Response checkout(
             @PathParam("shareCode") String shareCode,
-            ProposalCheckoutRequest body) {
+            ProposalCheckoutRequest body,
+            @Context HttpHeaders headers) {
         try {
-            return Response.ok(proposalPaymentService.startCheckout(shareCode, body)).build();
+            String idempotencyKey =
+                    headers != null ? headers.getHeaderString("Idempotency-Key") : null;
+            return Response.ok(proposalPaymentService.startCheckout(shareCode, body, idempotencyKey))
+                    .build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(ApiErrorBody.builder().code("NOT_FOUND").message(e.getMessage()).build())

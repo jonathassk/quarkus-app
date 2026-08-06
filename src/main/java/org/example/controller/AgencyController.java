@@ -440,6 +440,142 @@ public class AgencyController {
     }
 
     @GET
+    @Path("/opportunities/{opportunityId}/tasks")
+    @Operation(summary = "Listar tarefas da solicitação")
+    public Response listOpportunityTasks(
+            @PathParam("opportunityId") UUID opportunityId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.listTasks(userId, opportunityId)).build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/tasks")
+    @Transactional
+    @Operation(summary = "Criar tarefa na solicitação")
+    public Response createOpportunityTask(
+            @PathParam("opportunityId") UUID opportunityId,
+            UpsertOpportunityTaskRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.status(Response.Status.CREATED)
+                        .entity(agencyOpportunityService.createTask(userId, opportunityId, request))
+                        .build());
+    }
+
+    @PATCH
+    @Path("/opportunities/{opportunityId}/tasks/{taskId}")
+    @Transactional
+    @Operation(summary = "Atualizar tarefa da solicitação")
+    public Response updateOpportunityTask(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("taskId") UUID taskId,
+            UpsertOpportunityTaskRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.updateTask(userId, opportunityId, taskId, request))
+                        .build());
+    }
+
+    @DELETE
+    @Path("/opportunities/{opportunityId}/tasks/{taskId}")
+    @Transactional
+    @Operation(summary = "Excluir tarefa da solicitação")
+    public Response deleteOpportunityTask(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("taskId") UUID taskId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            agencyOpportunityService.deleteTask(userId, opportunityId, taskId);
+            return Response.noContent().build();
+        });
+    }
+
+    @GET
+    @Path("/opportunities/{opportunityId}/files")
+    @Operation(summary = "Listar arquivos comerciais da solicitação")
+    public Response listOpportunityFiles(
+            @PathParam("opportunityId") UUID opportunityId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.listFiles(userId, opportunityId)).build());
+    }
+
+    @POST
+    @Path("/opportunities/{opportunityId}/files/upload")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Transactional
+    @Operation(summary = "Anexar arquivo comercial (cotação/PDF/imagem)")
+    public Response uploadOpportunityFile(
+            @PathParam("opportunityId") UUID opportunityId,
+            org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput multipart,
+            @QueryParam("kind") String kind,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            var map = multipart.getFormDataMap();
+            var fileParts = map.get("file");
+            if (fileParts == null || fileParts.isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("code", "VALIDATION_ERROR", "message", "file is required"))
+                        .build();
+            }
+            var filePart = fileParts.getFirst();
+            String rawName = null;
+            try {
+                var cd = filePart.getHeaders().getFirst("Content-Disposition");
+                if (cd != null) {
+                    for (String token : cd.split(";")) {
+                        token = token.trim();
+                        if (token.startsWith("filename=")) {
+                            rawName = token.substring("filename=".length()).replace("\"", "");
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+            String browserCt = filePart.getMediaType() != null ? filePart.getMediaType().toString() : null;
+            byte[] bytes;
+            try {
+                bytes = filePart.getBody(byte[].class, null);
+            } catch (Exception e) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("code", "VALIDATION_ERROR", "message", "Could not read uploaded file"))
+                        .build();
+            }
+            return Response.status(Response.Status.CREATED)
+                    .entity(agencyOpportunityService.uploadFile(
+                            userId, opportunityId, rawName, browserCt, bytes, kind))
+                    .build();
+        });
+    }
+
+    @GET
+    @Path("/opportunities/{opportunityId}/files/{fileId}/view")
+    @Operation(summary = "URL temporária de visualização do arquivo")
+    public Response viewOpportunityFile(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("fileId") UUID fileId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(agencyOpportunityService.getFileView(userId, opportunityId, fileId)).build());
+    }
+
+    @DELETE
+    @Path("/opportunities/{opportunityId}/files/{fileId}")
+    @Transactional
+    @Operation(summary = "Remover arquivo comercial")
+    public Response deleteOpportunityFile(
+            @PathParam("opportunityId") UUID opportunityId,
+            @PathParam("fileId") UUID fileId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            agencyOpportunityService.deleteFile(userId, opportunityId, fileId);
+            return Response.noContent().build();
+        });
+    }
+
+    @GET
     @Path("/audit")
     @Operation(summary = "Histórico de auditoria B2B")
     public Response audit(

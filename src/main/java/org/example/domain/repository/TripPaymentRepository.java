@@ -25,6 +25,17 @@ public class TripPaymentRepository implements PanacheRepositoryBase<TripPayment,
         return find("stripeSessionId", sessionId.trim()).firstResultOptional();
     }
 
+    /** Último PENDING com session Stripe — para reuso em double-submit. */
+    public Optional<TripPayment> findLatestPendingWithSession(UUID tripId, TripPaymentKind kind) {
+        return find(
+                        "trip.id = ?1 AND kind = ?2 AND status = ?3 AND stripeSessionId IS NOT NULL "
+                                + "ORDER BY createdAt DESC",
+                        tripId,
+                        kind,
+                        TripPaymentStatus.PENDING)
+                .firstResultOptional();
+    }
+
     public BigDecimal sumPaidByTrip(UUID tripId) {
         BigDecimal sum = getEntityManager()
                 .createQuery(
