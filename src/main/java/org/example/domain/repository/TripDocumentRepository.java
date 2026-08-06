@@ -1,14 +1,13 @@
 package org.example.domain.repository;
 
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
 import org.example.domain.entity.TripDocument;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-@ApplicationScoped
+/** Bean via {@code ApplicationConfig#tripDocumentRepository()} (sem @ApplicationScoped). */
 public class TripDocumentRepository implements PanacheRepositoryBase<TripDocument, UUID> {
 
     public List<TripDocument> findByTripId(UUID tripId) {
