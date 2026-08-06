@@ -38,6 +38,17 @@ public enum B2bTripLogAction {
     DOCUMENT_UPLOADED,
     DOCUMENT_DELETED,
 
+    // ── Passageiros / formulários ──────────────────────────────────────────────
+    PASSENGER_CREATED,
+    PASSENGER_UPDATED,
+    PASSENGER_DELETED,
+    PASSENGER_INVITED,
+    PASSENGER_FORM_SUBMITTED,
+    PASSENGER_MARKED_REVIEWED,
+    PASSENGER_CORRECTION_REQUESTED,
+    PASSENGER_CORRECTION_RESOLVED,
+    PASSENGER_PROFILE_CONSENT,
+
     // ── Membros da viagem (TripUser) ──────────────────────────────────────────
     MEMBER_ADDED,
     MEMBER_REMOVED,
@@ -59,4 +70,18 @@ public enum B2bTripLogAction {
     // ── CRM / atribuição ──────────────────────────────────────────────────────
     TRIP_ASSIGNED,
     CLIENT_LINKED,
+
+    // ── Operação / reservas ───────────────────────────────────────────────────
+    OPS_SERVICES_MATERIALIZED,
+    OPS_SERVICE_STATUS_CHANGED,
+    OPS_SERVICE_CONFIRMED,
+    OPS_SERVICE_CANCELLED,
+    OPS_SERVICE_PUBLISHED,
+    OPS_DEADLINE_COMPLETED,
+    OPS_DOCUMENT_LINKED,
+    OPS_DOCUMENT_STATUS_CHANGED,
+    OPS_PASSENGERS_LINKED,
+    OPS_CHANGE_REQUESTED,
+    OPS_CHANGE_UPDATED,
+    OPS_SUPPLIER_ASSIGNED,
 }

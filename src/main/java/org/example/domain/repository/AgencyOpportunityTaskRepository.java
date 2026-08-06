@@ -38,6 +38,24 @@ public class AgencyOpportunityTaskRepository implements PanacheRepositoryBase<Ag
         return count > 0;
     }
 
+    /** Idempotência por passageiro: note contém o UUID do passageiro. */
+    public boolean existsOpenAutomationForPassengerNote(
+            UUID opportunityId, OpportunityNextActionType actionKind, UUID passengerId) {
+        if (passengerId == null) {
+            return existsOpenAutomation(opportunityId, actionKind);
+        }
+        String marker = "passengerId=" + passengerId;
+        long count = count(
+                "opportunity.id = ?1 AND actionKind = ?2 AND origin = ?3 AND status IN (?4, ?5) AND note LIKE ?6",
+                opportunityId,
+                actionKind,
+                OpportunityTaskOrigin.AUTOMATION,
+                OpportunityTaskStatus.OPEN,
+                OpportunityTaskStatus.WAITING,
+                "%" + marker + "%");
+        return count > 0;
+    }
+
     public boolean existsOpenActionKind(UUID opportunityId, OpportunityNextActionType actionKind) {
         long count = count(
                 "opportunity.id = ?1 AND actionKind = ?2 AND status IN (?3, ?4)",

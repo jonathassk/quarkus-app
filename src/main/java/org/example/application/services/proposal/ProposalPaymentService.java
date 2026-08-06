@@ -66,6 +66,8 @@ public class ProposalPaymentService {
     B2bAuditService auditService;
     @Inject
     NotificationService notificationService;
+    @Inject
+    org.example.application.services.ops.OperationalWorkspaceService operationalWorkspaceService;
 
     @ConfigProperty(name = "stripe.api.key")
     Optional<String> apiKey;
@@ -294,11 +296,12 @@ public class ProposalPaymentService {
         }
         trip.setProposalStatus(ProposalStatus.CONFIRMED);
         if (trip.getOperationStatus() == null) {
-            trip.setOperationStatus(org.example.domain.enums.OperationStatus.TO_RESERVE);
+            trip.setOperationStatus(org.example.domain.enums.OperationStatus.PREPARING_RESERVATIONS);
         }
         trip.setLastContactAt(Instant.now());
         tripRepository.persist(trip);
         agencyOpportunityService.syncStageFromProposalStatus(trip.id, ProposalStatus.CONFIRMED);
+        operationalWorkspaceService.materializeFromApprovedProposal(trip);
 
         auditService.recordExternalActor(
                 trip,

@@ -33,6 +33,7 @@ public class CommercialProposalService {
 
     @Inject AgencyService agencyService;
     @Inject OpportunityTaskAutomationService taskAutomationService;
+    @Inject org.example.application.services.ops.OperationalWorkspaceService operationalWorkspaceService;
     @Inject UserRepository userRepository;
     @Inject TripRepository tripRepository;
     @Inject AgencyOpportunityRepository opportunityRepository;
@@ -908,6 +909,9 @@ public class CommercialProposalService {
         trip.setProposalStatus(ProposalStatus.PENDING_PAYMENT);
         trip.setFinalPrice(PricingEngine.toMajor(totalMinor));
         trip.setBaseCost(PricingEngine.toMajor(option.getSupplierCostMinor()));
+        if (trip.getOperationStatus() == null) {
+            trip.setOperationStatus(OperationStatus.PREPARING_RESERVATIONS);
+        }
 
         if (proposal.getOpportunity() != null) {
             AgencyOpportunity opp = proposal.getOpportunity();
@@ -915,6 +919,8 @@ public class CommercialProposalService {
             opp.setWonAt(Instant.now());
             taskAutomationService.onProposalApproved(opp);
         }
+
+        operationalWorkspaceService.materializeFromApprovedProposal(trip);
 
         return toPublicDto(proposal, version);
     }
@@ -988,11 +994,8 @@ public class CommercialProposalService {
 
     private void applyPriceToItem(ProposalItem item) {
         PricingEngine.ItemResult r = PricingEngine.priceItem(toInput(item));
-        item.setCostMinor(r.costMinor() > 0 || item.getPricingMode() != ItemPricingMode.MANUAL
-                ? r.costMinor() : item.getCostMinor());
-        if (item.getPricingMode() == ItemPricingMode.MANUAL && item.getCostMinor() == null) {
-            // keep null cost
-        } else if (item.getPricingMode() != ItemPricingMode.MANUAL || item.getCostMinor() != null) {
+        // Não unboxar getCostMinor() num ternário long/Long — NPE quando custo é null (modo MANUAL).
+        if (!(item.getPricingMode() == ItemPricingMode.MANUAL && item.getCostMinor() == null)) {
             item.setCostMinor(r.costMinor());
         }
         item.setClientPriceMinor(r.clientPriceMinor());

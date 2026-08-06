@@ -3,6 +3,7 @@ package org.example.application.services.agency;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import org.example.application.services.passenger.TripPassengerService;
 import org.example.domain.entity.AgencyOpportunity;
 import org.example.domain.entity.AgencyOpportunityTask;
 import org.example.domain.entity.Trip;
@@ -29,6 +30,10 @@ public class OpportunityTaskAutomationService {
     AgencyOpportunityRepository opportunityRepository;
     @Inject
     AgencyOpportunityTaskRepository taskRepository;
+    @Inject
+    TripPassengerService tripPassengerService;
+    @Inject
+    org.example.application.services.passenger.PassengerAlertService passengerAlertService;
 
     @Transactional
     public void onOpportunityCreated(AgencyOpportunity opp) {
@@ -148,6 +153,12 @@ public class OpportunityTaskAutomationService {
                 OpportunityNextActionType.REQUEST_DOCS.defaultTitle(),
                 OpportunityTaskPriority.NORMAL,
                 false);
+
+        // Seed de slots de passageiros (idempotente) para o fluxo de formulários
+        if (opp.getTrip() != null && opp.getTrip().id != null) {
+            tripPassengerService.seedFromOpportunityQuiet(opp.getTrip().id);
+            passengerAlertService.syncAlertsForTrip(opp.getTrip().id);
+        }
     }
 
     @Transactional

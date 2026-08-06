@@ -16,12 +16,16 @@ import org.example.application.dto.document.*;
 import org.example.application.services.B2bAuditService;
 import org.example.application.services.TokenService;
 import org.example.application.services.entitlement.EntitlementService;
+import org.example.domain.entity.OperationalService;
 import org.example.domain.entity.Trip;
 import org.example.domain.entity.TripDocument;
 import org.example.domain.entity.User;
 import org.example.domain.enums.B2bTripLogAction;
 import org.example.domain.enums.DocumentStatus;
 import org.example.domain.enums.DocumentVisibility;
+import org.example.domain.enums.OperationalDocumentKind;
+import org.example.domain.enums.OperationalDocumentStatus;
+import org.example.domain.repository.OperationalServiceRepository;
 import org.example.domain.repository.TripDocumentRepository;
 import org.example.domain.repository.TripRepository;
 import org.example.domain.repository.UserRepository;
@@ -54,6 +58,7 @@ public class TripDocumentController {
 
     private final TripRepository tripRepository;
     private final TripDocumentRepository tripDocumentRepository;
+    private final OperationalServiceRepository operationalServiceRepository;
     private final UserRepository userRepository;
     private final TokenService tokenService;
     private final ObjectStorageService objectStorageService;
@@ -193,6 +198,22 @@ public class TripDocumentController {
         String s3Key = "trips/" + tripId + "/documents/" + UUID.randomUUID() + extension + ".enc";
         User uploader = userRepository.findById(userIdOpt.get());
 
+        UUID operationalServiceId = parseUuidField(multipart, "operationalServiceId");
+        OperationalDocumentKind documentKind = parseEnumField(
+                multipart, "documentKind", OperationalDocumentKind::fromString, null);
+        OperationalDocumentStatus operationalDocStatus = parseEnumField(
+                multipart, "operationalDocStatus", OperationalDocumentStatus::fromString, null);
+        DocumentVisibility visibility = parseEnumField(
+                multipart, "visibility", DocumentVisibility::fromString, null);
+
+        OperationalService linkedService = null;
+        if (operationalServiceId != null) {
+            linkedService = operationalServiceRepository.findById(operationalServiceId);
+            if (linkedService == null || !linkedService.getTrip().id.equals(tripId)) {
+                return badRequest("INVALID_SERVICE", "operationalServiceId does not belong to this trip");
+            }
+        }
+
         try {
             byte[] encrypted = documentCryptoService.encrypt(fileBytes);
             // Content-Type no R2 é opaco — o MIME real fica só no banco.
@@ -206,6 +227,13 @@ public class TripDocumentController {
                     .sizeBytes((long) fileBytes.length)
                     .encryptionVersion(documentCryptoService.currentVersion())
                     .status(DocumentStatus.READY)
+                    .visibility(visibility != null ? visibility : DocumentVisibility.CLIENT)
+                    .operationalService(linkedService)
+                    .documentKind(documentKind != null ? documentKind
+                            : (linkedService != null ? OperationalDocumentKind.VOUCHER : OperationalDocumentKind.OTHER))
+                    .operationalDocStatus(operationalDocStatus != null
+                            ? operationalDocStatus
+                            : (linkedService != null ? OperationalDocumentStatus.RECEIVED : null))
                     .uploadedBy(uploader)
                     .build();
 
@@ -527,6 +555,11 @@ public class TripDocumentController {
                 .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : DocumentVisibility.CLIENT.name())
                 .activityId(doc.getActivity() != null ? doc.getActivity().id : null)
                 .segmentId(doc.getSegment() != null ? doc.getSegment().id : null)
+                .operationalServiceId(doc.getOperationalService() != null ? doc.getOperationalService().id : null)
+                .documentKind(doc.getDocumentKind() != null ? doc.getDocumentKind().name() : null)
+                .operationalDocStatus(doc.getOperationalDocStatus() != null
+                        ? doc.getOperationalDocStatus().name() : null)
+                .passengerId(doc.getPassenger() != null ? doc.getPassenger().id : null)
                 .createdAt(doc.getCreatedAt() != null ? doc.getCreatedAt().toString() : null)
                 .build();
     }
@@ -567,19 +600,51 @@ public class TripDocumentController {
     }
 
     private static String resolveMultipartTitle(MultipartFormDataInput multipart, String defaultTitle) {
-        List<InputPart> titleParts = multipart.getFormDataMap().get("title");
-        if (titleParts == null || titleParts.isEmpty()) {
-            return defaultTitle;
-        }
-        try {
-            String title = titleParts.getFirst().getBodyAsString();
-            if (title != null && !title.isBlank()) {
-                return title.trim();
-            }
-        } catch (IOException ignored) {
-            // use default
+        String title = readMultipartField(multipart, "title");
+        if (title != null && !title.isBlank()) {
+            return title.trim();
         }
         return defaultTitle;
+    }
+
+    private static String readMultipartField(MultipartFormDataInput multipart, String fieldName) {
+        List<InputPart> parts = multipart.getFormDataMap().get(fieldName);
+        if (parts == null || parts.isEmpty()) {
+            return null;
+        }
+        try {
+            return parts.getFirst().getBodyAsString();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private static UUID parseUuidField(MultipartFormDataInput multipart, String fieldName) {
+        String raw = readMultipartField(multipart, fieldName);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static <T> T parseEnumField(
+            MultipartFormDataInput multipart,
+            String fieldName,
+            java.util.function.Function<String, T> parser,
+            T defaultValue) {
+        String raw = readMultipartField(multipart, fieldName);
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return parser.apply(raw.trim());
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
 
     private static String extractMultipartFileName(InputPart filePart) {

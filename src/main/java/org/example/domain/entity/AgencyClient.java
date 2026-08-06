@@ -68,6 +68,14 @@ public class AgencyClient extends PanacheEntityBase {
     @Column(length = 32)
     private String gender;
 
+    /** Consentimento para reutilizar dados do viajante em viagens futuras nesta agência. */
+    @Column(name = "traveler_reuse_consent_at")
+    private Instant travelerReuseConsentAt;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "traveler_prefs_json", columnDefinition = "jsonb")
+    private String travelerPrefsJson;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;

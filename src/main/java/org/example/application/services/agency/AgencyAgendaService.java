@@ -458,6 +458,49 @@ public class AgencyAgendaService {
         return task;
     }
 
+    /**
+     * Automação por passageiro (idempotente via note com passengerId=...).
+     * Não usa {@link #existsOpenAutomation} global — permite uma tarefa por passageiro.
+     */
+    @Transactional
+    public AgencyOpportunityTask createPassengerAutomationTask(
+            AgencyOpportunity opp,
+            OpportunityNextActionType actionKind,
+            Instant dueAt,
+            User assignee,
+            String title,
+            OpportunityTaskPriority priority,
+            UUID passengerId) {
+        if (opp == null || actionKind == null || passengerId == null) {
+            return null;
+        }
+        if (taskRepository.existsOpenAutomationForPassengerNote(opp.id, actionKind, passengerId)) {
+            return null;
+        }
+        AgencyOpportunityTask task = AgencyOpportunityTask.builder()
+                .opportunity(opp)
+                .agency(opp.getAgency())
+                .title(title != null ? title : actionKind.defaultTitle())
+                .note("passengerId=" + passengerId)
+                .status(OpportunityTaskStatus.OPEN)
+                .dueAt(dueAt)
+                .assignee(assignee)
+                .taskType(actionKind.defaultTaskType())
+                .actionKind(actionKind)
+                .origin(OpportunityTaskOrigin.AUTOMATION)
+                .priority(priority != null ? priority : OpportunityTaskPriority.NORMAL)
+                .nextAction(false)
+                .build();
+        taskRepository.persist(task);
+        opportunityRepository.persist(opp);
+        recordActivity(opp, null, OpportunityActivityType.TASK,
+                "Alerta passageiro: " + task.getTitle(), null);
+        if (assignee != null) {
+            maybeNotifyAssignee(assignee, null, task, opp);
+        }
+        return task;
+    }
+
     public void promoteAsNextAction(AgencyOpportunity opp, AgencyOpportunityTask task) {
         if (opp.getNextActionTask() != null && !opp.getNextActionTask().id.equals(task.id)) {
             AgencyOpportunityTask prev = opp.getNextActionTask();

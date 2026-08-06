@@ -210,6 +210,7 @@ public class ApplicationConfig {
     public TripDocumentController tripDocumentController(
             TripRepository tripRepository,
             TripDocumentRepository tripDocumentRepository,
+            OperationalServiceRepository operationalServiceRepository,
             UserRepository userRepository,
             TokenService tokenService,
             ObjectStorageService objectStorageService,
@@ -220,6 +221,7 @@ public class ApplicationConfig {
         return new TripDocumentController(
                 tripRepository,
                 tripDocumentRepository,
+                operationalServiceRepository,
                 userRepository,
                 tokenService,
                 objectStorageService,

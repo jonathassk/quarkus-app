@@ -1,14 +1,14 @@
 package org.example.domain.repository;
 
-import java.util.UUID;
-
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
-
+import jakarta.enterprise.context.ApplicationScoped;
 import org.example.domain.entity.TripDocument;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
+@ApplicationScoped
 public class TripDocumentRepository implements PanacheRepositoryBase<TripDocument, UUID> {
 
     public List<TripDocument> findByTripId(UUID tripId) {
@@ -17,6 +17,23 @@ public class TripDocumentRepository implements PanacheRepositoryBase<TripDocumen
 
     public Optional<TripDocument> findByIdAndTripId(UUID documentId, UUID tripId) {
         return find("id = ?1 AND trip.id = ?2", documentId, tripId).firstResultOptional();
+    }
+
+    public List<TripDocument> findByPassengerId(UUID passengerId) {
+        return list("passenger.id = ?1 ORDER BY createdAt DESC", passengerId);
+    }
+
+    public Optional<TripDocument> findLatestByPassengerId(UUID passengerId) {
+        return find("passenger.id = ?1 ORDER BY createdAt DESC", passengerId)
+                .firstResultOptional();
+    }
+
+    public List<TripDocument> findByOperationalServiceId(UUID serviceId) {
+        return list("operationalService.id = ?1 ORDER BY createdAt DESC", serviceId);
+    }
+
+    public List<TripDocument> findOperationalByTripId(UUID tripId) {
+        return list("trip.id = ?1 AND operationalService IS NOT NULL ORDER BY createdAt DESC", tripId);
     }
 
     /** Soma de bytes de documentos das viagens do workspace (null size_bytes conta como 0). */

@@ -16,5 +16,9 @@ public class TripDocumentResponse {
     private String visibility;
     private UUID activityId;
     private UUID segmentId;
+    private UUID operationalServiceId;
+    private String documentKind;
+    private String operationalDocStatus;
+    private UUID passengerId;
     private String createdAt;
 }

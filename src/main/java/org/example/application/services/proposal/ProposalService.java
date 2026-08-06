@@ -83,6 +83,8 @@ public class ProposalService {
     org.example.infrastructure.email.EmailWorkerInvoker emailWorkerInvoker;
     @Inject
     NotificationService notificationService;
+    @Inject
+    org.example.application.services.ops.OperationalWorkspaceService operationalWorkspaceService;
 
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "app.public-url")
     String appPublicUrl;
@@ -183,7 +185,7 @@ public class ProposalService {
         if (trip.getFinalPrice() != null && trip.getFinalPrice().compareTo(BigDecimal.ZERO) > 0) {
             next = ProposalStatus.PENDING_PAYMENT;
         } else if (trip.getOperationStatus() == null) {
-            trip.setOperationStatus(OperationStatus.TO_RESERVE);
+            trip.setOperationStatus(OperationStatus.PREPARING_RESERVATIONS);
         }
 
         trip.setProposalStatus(next);
@@ -198,6 +200,7 @@ public class ProposalService {
                         ? "Aguardando pagamento"
                         : "Confirmada");
         taskAutomationService.onProposalApprovedForTrip(trip.id);
+        operationalWorkspaceService.materializeFromApprovedProposal(trip);
 
         String actorLabel = name + " <" + email + ">";
         String meta = "{\"proposalStatus\":\"" + next + "\""
@@ -667,13 +670,18 @@ public class ProposalService {
                 status = ProposalStatus.CONFIRMED;
             }
             if (status == ProposalStatus.CONFIRMED && trip.getOperationStatus() == null) {
-                trip.setOperationStatus(OperationStatus.TO_RESERVE);
+                trip.setOperationStatus(OperationStatus.PREPARING_RESERVATIONS);
             }
             if (status == ProposalStatus.CANCELLED && trip.getOperationStatus() != null) {
                 trip.setOperationStatus(OperationStatus.CANCELLED);
             }
             trip.setProposalStatus(status);
             changed = true;
+            if (status == ProposalStatus.CONFIRMED
+                    || status == ProposalStatus.PENDING_PAYMENT
+                    || status == ProposalStatus.APPROVED) {
+                operationalWorkspaceService.materializeFromApprovedProposal(trip);
+            }
         }
 
         if (!changed) {
@@ -875,7 +883,7 @@ public class ProposalService {
                 && (status == ProposalStatus.CONFIRMED || status == ProposalStatus.APPROVED)) {
             trip.setProposalStatus(ProposalStatus.IN_TRIP);
             if (trip.getOperationStatus() == null) {
-                trip.setOperationStatus(OperationStatus.TO_RESERVE);
+                trip.setOperationStatus(OperationStatus.PREPARING_RESERVATIONS);
             }
             tripRepository.persist(trip);
         }

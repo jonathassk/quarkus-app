@@ -14,6 +14,10 @@ public enum OpportunityNextActionType {
     REQUEST_DEPOSIT,
     RESERVE_SERVICE,
     REQUEST_DOCS,
+    PASSENGER_FORM_PENDING,
+    PASSENGER_DOC_EXPIRING,
+    PASSENGER_DOC_EXPIRED,
+    PASSENGER_NO_RESPONSE,
     SEND_VOUCHERS,
     REVIEW_CHANGE,
     OTHER;
@@ -40,6 +44,10 @@ public enum OpportunityNextActionType {
             case REQUEST_DEPOSIT -> "Solicitar entrada";
             case RESERVE_SERVICE -> "Reservar serviço";
             case REQUEST_DOCS -> "Solicitar documentos";
+            case PASSENGER_FORM_PENDING -> "Formulário de passageiro pendente";
+            case PASSENGER_DOC_EXPIRING -> "Documento próximo do vencimento";
+            case PASSENGER_DOC_EXPIRED -> "Documento vencido";
+            case PASSENGER_NO_RESPONSE -> "Passageiro não respondeu";
             case SEND_VOUCHERS -> "Enviar vouchers";
             case REVIEW_CHANGE -> "Revisar alteração solicitada";
             case OTHER -> "Outra ação";
@@ -50,7 +58,8 @@ public enum OpportunityNextActionType {
         return switch (this) {
             case CONFIRM_PAYMENT, REQUEST_DEPOSIT -> OpportunityTaskType.FINANCIAL;
             case RESERVE_SERVICE, SEND_VOUCHERS -> OpportunityTaskType.OPERATIONAL;
-            case REQUEST_DOCS -> OpportunityTaskType.PASSENGER;
+            case REQUEST_DOCS, PASSENGER_FORM_PENDING, PASSENGER_DOC_EXPIRING,
+                    PASSENGER_DOC_EXPIRED, PASSENGER_NO_RESPONSE -> OpportunityTaskType.PASSENGER;
             default -> OpportunityTaskType.COMMERCIAL;
         };
     }

@@ -5,6 +5,9 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.example.domain.enums.DocumentStatus;
 import org.example.domain.enums.DocumentVisibility;
+import org.example.domain.enums.OperationalDocumentKind;
+import org.example.domain.enums.OperationalDocumentStatus;
+import org.example.domain.enums.PassengerDocReviewStatus;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
@@ -68,8 +71,29 @@ public class TripDocument extends PanacheEntityBase {
     private TripSegment segment;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "operational_service_id")
+    private OperationalService operationalService;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_kind", nullable = false, length = 32)
+    @Builder.Default
+    private OperationalDocumentKind documentKind = OperationalDocumentKind.OTHER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "operational_doc_status", length = 32)
+    private OperationalDocumentStatus operationalDocStatus;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by")
     private User uploadedBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "passenger_id")
+    private TripPassenger passenger;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "doc_review_status", length = 32)
+    private PassengerDocReviewStatus docReviewStatus;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -82,6 +106,9 @@ public class TripDocument extends PanacheEntityBase {
         Instant now = Instant.now();
         createdAt = now;
         updatedAt = now;
+        if (documentKind == null) {
+            documentKind = OperationalDocumentKind.OTHER;
+        }
     }
 
     @PreUpdate
