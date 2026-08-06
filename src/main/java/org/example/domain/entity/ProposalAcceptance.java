@@ -3,9 +3,12 @@ package org.example.domain.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -26,6 +29,31 @@ public class ProposalAcceptance extends PanacheEntityBase {
     @JoinColumn(name = "trip_id", nullable = false)
     private Trip trip;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "proposal_id")
+    private CommercialProposal proposal;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "version_id")
+    private ProposalVersion version;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "option_id")
+    private ProposalOption option;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "addon_ids", columnDefinition = "jsonb")
+    private List<UUID> addonIds;
+
+    @Column(name = "total_minor")
+    private Long totalMinor;
+
+    @Column(name = "terms_text", columnDefinition = "TEXT")
+    private String termsText;
+
+    @Column(name = "session_id", length = 128)
+    private String sessionId;
+
     @Column(nullable = false, length = 255)
     private String name;
 
@@ -41,7 +69,7 @@ public class ProposalAcceptance extends PanacheEntityBase {
     @Column(name = "accepted_at", nullable = false)
     private Instant acceptedAt;
 
-    /** Códigos de tier escolhidos, separados por vírgula. */
+    /** Códigos de tier escolhidos, separados por vírgula (legado). */
     @Column(name = "tier_codes", length = 512)
     private String tierCodes;
 

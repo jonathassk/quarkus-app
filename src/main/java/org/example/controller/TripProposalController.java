@@ -65,13 +65,18 @@ public class TripProposalController {
     @PUT
     @Path("/{tripId}/tiers")
     @Transactional
-    @Operation(summary = "Substituir tiers da proposta")
+    @Operation(summary = "Substituir tiers da proposta (legado — preferir opções/add-ons do motor comercial)")
     public Response upsertTiers(
             @PathParam("tripId") UUID tripId,
             UpsertProposalTiersRequest request,
             @Context HttpHeaders headers) {
         return withUser(headers, userId ->
-                Response.ok(proposalService.upsertTiers(tripId, userId, request)).build());
+                Response.status(Response.Status.GONE)
+                        .entity(ApiErrorBody.builder()
+                                .code("TIERS_DEPRECATED")
+                                .message("Tiers legados não aceitam mais escrita. Use opções e adicionais em /api/v1/agency/proposals.")
+                                .build())
+                        .build());
     }
 
     @POST

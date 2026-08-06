@@ -153,6 +153,30 @@ public class AgencyService {
         if (request.getPricingModel() != null) {
             agency.setPricingModel(normalizePricingModel(request.getPricingModel()));
         }
+        if (request.getMinMarginBps() != null) {
+            if (request.getMinMarginBps() < 0 || request.getMinMarginBps() > 10_000) {
+                throw new BadRequestException("minMarginBps must be between 0 and 10000");
+            }
+            agency.setMinMarginBps(request.getMinMarginBps() == 0 ? null : request.getMinMarginBps());
+        }
+        if (request.getMinServiceFeeMinor() != null) {
+            if (request.getMinServiceFeeMinor() < 0) {
+                throw new BadRequestException("minServiceFeeMinor must be >= 0");
+            }
+            agency.setMinServiceFeeMinor(request.getMinServiceFeeMinor());
+        }
+        if (request.getAllowBelowMinimum() != null) {
+            agency.setAllowBelowMinimum(request.getAllowBelowMinimum());
+        }
+        if (request.getRequireDiscountReason() != null) {
+            agency.setRequireDiscountReason(request.getRequireDiscountReason());
+        }
+        if (request.getMaxDiscountBps() != null) {
+            if (request.getMaxDiscountBps() < 0 || request.getMaxDiscountBps() > 10_000) {
+                throw new BadRequestException("maxDiscountBps must be between 0 and 10000");
+            }
+            agency.setMaxDiscountBps(request.getMaxDiscountBps() == 0 ? null : request.getMaxDiscountBps());
+        }
         agencyRepository.persist(agency);
         return toBrandingDto(agency, member.getAgencyRole());
     }
@@ -493,6 +517,11 @@ public class AgencyService {
                 .agentPhotoUrl(agency.getAgentPhotoUrl())
                 .websiteOrInstagram(agency.getWebsiteOrInstagram())
                 .pricingModel(agency.getPricingModel())
+                .minMarginBps(agency.getMinMarginBps())
+                .minServiceFeeMinor(agency.getMinServiceFeeMinor())
+                .allowBelowMinimum(agency.isAllowBelowMinimum())
+                .requireDiscountReason(agency.isRequireDiscountReason())
+                .maxDiscountBps(agency.getMaxDiscountBps())
                 .onboardingStep(agency.getOnboardingStep())
                 .onboardingCompleted(agency.getOnboardingCompletedAt() != null)
                 .demoDataActive(agency.isDemoDataActive())

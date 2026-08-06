@@ -28,6 +28,11 @@ public class AgencyBrandingDTO {
     private String agentPhotoUrl;
     private String websiteOrInstagram;
     private String pricingModel;
+    private Integer minMarginBps;
+    private Long minServiceFeeMinor;
+    private Boolean allowBelowMinimum;
+    private Boolean requireDiscountReason;
+    private Integer maxDiscountBps;
     private String onboardingStep;
     private Boolean onboardingCompleted;
     private Boolean demoDataActive;

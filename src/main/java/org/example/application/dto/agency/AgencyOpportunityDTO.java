@@ -21,6 +21,7 @@ public class AgencyOpportunityDTO {
     private String clientPhone;
     private String clientContactStatus;
     private UUID tripId;
+    private UUID proposalId;
     private String tripShareCode;
     private String title;
     private String stage;

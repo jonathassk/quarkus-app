@@ -15,7 +15,8 @@ import org.example.application.dto.agency.DuplicateContactCheckResponse;
 import org.example.application.dto.agency.MarkOpportunityLostRequest;
 import org.example.application.dto.agency.UpsertAgencyOpportunityRequest;
 import org.example.application.dto.agency.UpsertOpportunityTaskRequest;
-import org.example.application.services.proposal.ProposalService;
+import org.example.application.services.proposal.CommercialProposalService;
+import org.example.application.dto.proposal.commercial.CreateCommercialProposalRequest;
 import org.example.domain.entity.Agency;
 import org.example.domain.entity.AgencyClient;
 import org.example.domain.entity.AgencyMember;
@@ -89,6 +90,8 @@ public class AgencyOpportunityService {
     AgencyOpportunityFileRepository fileRepository;
     @Inject
     ObjectStorageService objectStorageService;
+    @Inject
+    CommercialProposalService commercialProposalService;
 
     public List<AgencyOpportunityDTO> list(
             UUID userId,
@@ -325,76 +328,21 @@ public class AgencyOpportunityService {
     }
 
     /**
-     * Converte a solicitação em proposta (Trip) sem redigitar dados.
+     * Converte a solicitação em proposta comercial (Proposal + Trip-opção) sem redigitar dados.
      */
     @Transactional
     public AgencyOpportunityDTO convertToProposal(UUID userId, UUID opportunityId) {
         AgencyMember member = agencyService.requireMembershipOrThrow(userId);
         AgencyOpportunity opp = requireAccessibleOpportunity(member, userId, opportunityId);
-        // Serializa conversões concorrentes (ex.: loop no front) para 1 Trip só.
         opportunityRepository.getEntityManager().lock(opp, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         opportunityRepository.getEntityManager().refresh(opp);
-        if (opp.getTrip() != null) {
+        if (opp.getProposal() != null) {
             return toDto(opp);
         }
+        commercialProposalService.createFromOpportunity(
+                userId, opportunityId, CreateCommercialProposalRequest.builder().build());
+        opportunityRepository.getEntityManager().refresh(opp);
         User creator = userRepository.findById(userId);
-        if (creator == null) {
-            throw new NotFoundException("User not found");
-        }
-        Workspace workspace = resolveWorkspace(creator);
-        AgencyClient client = opp.getClient();
-
-        LocalDate start = opp.getStartDate() != null
-                ? opp.getStartDate()
-                : LocalDate.now().plusMonths(2);
-        int days = opp.getDurationDays() != null && opp.getDurationDays() > 0
-                ? opp.getDurationDays()
-                : 7;
-        LocalDate end = opp.getEndDate() != null ? opp.getEndDate() : start.plusDays(Math.max(days - 1, 0));
-
-        String dest = blankToNull(opp.getDestinations());
-        String description = buildTripDescription(opp);
-
-        Trip trip = Trip.builder()
-                .name(opp.getTitle())
-                .description(description)
-                .workspace(workspace)
-                .createdBy(creator)
-                .agency(member.getAgency())
-                .client(client)
-                .assignedConsultant(opp.getAssignedConsultant() != null
-                        ? opp.getAssignedConsultant()
-                        : creator)
-                .status(TripStatus.PLANNING)
-                .proposalStatus(ProposalStatus.QUOTING)
-                .shareCode(ProposalService.generateShareCode())
-                .startDate(start)
-                .endDate(end)
-                .durationDays(days)
-                .budgetTotal(opp.getBudgetMax() != null
-                        ? opp.getBudgetMax()
-                        : opp.getBudgetMin() != null ? opp.getBudgetMin() : BigDecimal.ZERO)
-                .currency(opp.getBudgetCurrency() != null ? opp.getBudgetCurrency() : "BRL")
-                .proposalClientEmail(client.getEmail())
-                .proposalClientName(client.getName())
-                .nextFollowUpAt(opp.getNextFollowUpAt())
-                .segments(new ArrayList<>())
-                .proposalTiers(new ArrayList<>())
-                .users(new ArrayList<>())
-                .build();
-        tripRepository.persist(trip);
-        // Mesmo contrato do CreateTrip: criador precisa estar em trip_users,
-        // senão update-trip falha em "Trip must have at least one user".
-        tripRepository.addTripMember(trip, creator, "OWNER");
-
-        opp.setTrip(trip);
-        if (opp.getStage() == OpportunityStage.NEW
-                || opp.getStage() == OpportunityStage.QUALIFYING) {
-            opp.setStage(OpportunityStage.QUOTING);
-        }
-        refreshQualification(opp);
-        opp.setLastActivityAt(Instant.now());
-        opportunityRepository.persist(opp);
         recordActivity(opp, creator, OpportunityActivityType.PROPOSAL_SENT,
                 "Proposta iniciada", null);
         return toDto(opp);
@@ -1131,7 +1079,9 @@ public class AgencyOpportunityService {
                         ? client.getContactStatus().name()
                         : ContactStatus.PROSPECT.name())
                 .tripId(trip != null ? trip.id : null)
-                .tripShareCode(trip != null ? trip.getShareCode() : null)
+                .proposalId(opp.getProposal() != null ? opp.getProposal().id : null)
+                .tripShareCode(trip != null ? trip.getShareCode()
+                        : (opp.getProposal() != null ? opp.getProposal().getShareCode() : null))
                 .title(opp.getTitle())
                 .stage(opp.getStage() != null ? opp.getStage().name() : OpportunityStage.NEW.name())
                 .requestSummary(opp.getRequestSummary())

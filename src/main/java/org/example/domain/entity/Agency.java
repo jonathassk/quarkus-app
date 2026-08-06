@@ -109,6 +109,26 @@ public class Agency extends PanacheEntityBase {
     @Column(name = "pricing_model", length = 32)
     private String pricingModel;
 
+    /** Margem mínima sobre a venda em basis points (1000 = 10%). Null = sem piso. */
+    @Column(name = "min_margin_bps")
+    private Integer minMarginBps;
+
+    @Column(name = "min_service_fee_minor", nullable = false)
+    @Builder.Default
+    private long minServiceFeeMinor = 0;
+
+    @Column(name = "allow_below_minimum", nullable = false)
+    @Builder.Default
+    private boolean allowBelowMinimum = true;
+
+    @Column(name = "require_discount_reason", nullable = false)
+    @Builder.Default
+    private boolean requireDiscountReason = true;
+
+    /** Desconto máximo em bps sobre o preço. Null = sem teto. */
+    @Column(name = "max_discount_bps")
+    private Integer maxDiscountBps;
+
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
 

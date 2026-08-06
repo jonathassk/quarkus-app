@@ -38,6 +38,10 @@ public class AgencyOpportunity extends PanacheEntityBase {
     @JoinColumn(name = "trip_id")
     private Trip trip;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "proposal_id")
+    private CommercialProposal proposal;
+
     @Column(nullable = false, length = 255)
     private String title;
 
