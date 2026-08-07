@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import org.example.application.dto.agency.AgencyTripPickerItemDTO;
 import org.example.application.dto.proposal.commercial.*;
 import org.example.application.services.agency.AgencyService;
 import org.example.application.services.agency.OpportunityTaskAutomationService;
@@ -18,8 +19,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -36,6 +39,7 @@ public class CommercialProposalService {
     @Inject org.example.application.services.ops.OperationalWorkspaceService operationalWorkspaceService;
     @Inject UserRepository userRepository;
     @Inject TripRepository tripRepository;
+    @Inject AgencyMemberRepository agencyMemberRepository;
     @Inject AgencyOpportunityRepository opportunityRepository;
     @Inject CommercialProposalRepository proposalRepository;
     @Inject ProposalVersionRepository versionRepository;
@@ -117,41 +121,7 @@ public class CommercialProposalService {
                 .build();
         optionRepository.persist(option);
 
-        // PACKAGE item in QUICK mode
-        long costMinor = trip.getBaseCost() != null ? PricingEngine.toMinor(trip.getBaseCost()) : 0;
-        PricingEngine.ItemResult priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
-                ItemPricingMode.COST_PLUS,
-                costMinor > 0 ? costMinor : null,
-                MarkupKind.PERCENT,
-                null,
-                markupBps,
-                null, null, null, null,
-                0L,
-                trip.getFinalPrice() != null ? PricingEngine.toMinor(trip.getFinalPrice()) : null));
-        if (costMinor == 0 && trip.getFinalPrice() != null) {
-            priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
-                    ItemPricingMode.MANUAL, null, null, null, null,
-                    null, null, null, null, 0L, PricingEngine.toMinor(trip.getFinalPrice())));
-        }
-
-        ProposalItem packageItem = ProposalItem.builder()
-                .version(version)
-                .option(option)
-                .scope(ProposalItemScope.OPTION)
-                .itemType(ProposalItemType.PACKAGE)
-                .name("Pacote")
-                .pricingMode(costMinor > 0 ? ItemPricingMode.COST_PLUS : ItemPricingMode.MANUAL)
-                .costMinor(priced.costMinor() > 0 ? priced.costMinor() : null)
-                .markupKind(MarkupKind.PERCENT)
-                .markupPercentBps(markupBps)
-                .serviceFeeMinor(priced.serviceFeeMinor())
-                .clientPriceMinor(priced.clientPriceMinor())
-                .expectedRevenueMinor(priced.expectedRevenueMinor())
-                .sortOrder(0)
-                .build();
-        itemRepository.persist(packageItem);
-        applyTotalsToOption(option, List.of(priced), List.of());
-
+        createPackageItemForTrip(version, option, trip, markupBps);
         syncTripMirror(option);
 
         opp.setProposal(proposal);
@@ -227,6 +197,7 @@ public class CommercialProposalService {
     @Transactional
     public CommercialProposalDTO get(UUID userId, UUID proposalId) {
         CommercialProposal proposal = requireAgencyProposal(userId, proposalId);
+        seedEmptyPackagesFromTrips(proposal);
         return toDto(proposal, true);
     }
 
@@ -235,7 +206,9 @@ public class CommercialProposalService {
         agencyService.requireMembershipOrThrow(userId);
         ProposalOption option = optionRepository.findByTripId(tripId)
                 .orElseThrow(() -> new NotFoundException("Proposal option not found for trip"));
-        return toDto(option.getVersion().getProposal(), true);
+        CommercialProposal proposal = option.getVersion().getProposal();
+        seedEmptyPackagesFromTrips(proposal);
+        return toDto(proposal, true);
     }
 
     // ─── Options ───────────────────────────────────────────────────────────
@@ -305,6 +278,365 @@ public class CommercialProposalService {
         proposal.setFormat(ProposalFormat.COMPARE);
         recalculateOption(clone);
         return toDto(proposal, true);
+    }
+
+    // ─── Picker / from existing trip ───────────────────────────────────────
+
+    @Transactional
+    public List<AgencyTripPickerItemDTO> listTripsForPicker(
+            UUID userId, TripPickerOrigin origin, String q, UUID excludeProposalId) {
+        AgencyMember member = agencyService.requireMembershipOrThrow(userId);
+        UUID agencyId = member.getAgency().id;
+
+        Set<UUID> excludeTripIds = new HashSet<>();
+        if (excludeProposalId != null) {
+            CommercialProposal proposal = proposalRepository.findById(excludeProposalId);
+            if (proposal != null
+                    && proposal.getAgency() != null
+                    && proposal.getAgency().id.equals(agencyId)
+                    && proposal.getCurrentVersion() != null) {
+                for (ProposalOption opt : optionRepository.findByVersionId(proposal.getCurrentVersion().id)) {
+                    if (opt.getTrip() != null) {
+                        excludeTripIds.add(opt.getTrip().id);
+                    }
+                }
+            }
+        }
+
+        Set<UUID> memberUserIds = agencyMemberRepository.findAllByAgency(agencyId).stream()
+                .filter(m -> m.getUser() != null)
+                .map(m -> m.getUser().id)
+                .collect(Collectors.toSet());
+
+        TripPickerOrigin effective = origin != null ? origin : TripPickerOrigin.ALL;
+        List<AgencyTripPickerItemDTO> result = new ArrayList<>();
+        for (Object[] row : tripRepository.findForAgencyPicker(agencyId, q, excludeTripIds, 80)) {
+            Trip trip = (Trip) row[0];
+            int segmentCount = row[1] instanceof Number n ? n.intValue() : 0;
+            boolean agentOrigin = trip.getCreatedBy() != null && memberUserIds.contains(trip.getCreatedBy().id);
+            if (effective == TripPickerOrigin.AGENT && !agentOrigin) {
+                continue;
+            }
+            if (effective == TripPickerOrigin.TRAVELER && agentOrigin) {
+                continue;
+            }
+            String createdByName = trip.getCreatedBy() != null ? trip.getCreatedBy().getFullName() : null;
+            result.add(AgencyTripPickerItemDTO.builder()
+                    .id(trip.id)
+                    .name(trip.getName())
+                    .startDate(trip.getStartDate())
+                    .endDate(trip.getEndDate())
+                    .coverImageUrl(trip.getCoverImageUrl())
+                    .createdByName(createdByName)
+                    .origin(agentOrigin ? "AGENT" : "TRAVELER")
+                    .segmentCount(segmentCount)
+                    .proposalStatus(trip.getProposalStatus() != null ? trip.getProposalStatus().name() : null)
+                    .build());
+        }
+        return result;
+    }
+
+    @Transactional
+    public CommercialProposalDTO addOptionFromTrip(
+            UUID userId, UUID proposalId, AddOptionFromTripRequest request) {
+        if (request == null || request.getTripId() == null) {
+            throw new BadRequestException("tripId is required");
+        }
+        CommercialProposal proposal = requireAgencyProposal(userId, proposalId);
+        ProposalVersion version = requireEditableVersion(proposal);
+        List<ProposalOption> existing = optionRepository.findByVersionId(version.id);
+        long visible = existing.stream().filter(o -> !o.isHidden()).count();
+        if (visible >= MAX_OPTIONS) {
+            throw new BadRequestException("Máximo de " + MAX_OPTIONS + " opções por proposta");
+        }
+
+        Trip sourceTrip = tripRepository.findById(request.getTripId());
+        if (sourceTrip == null
+                || sourceTrip.getAgency() == null
+                || !sourceTrip.getAgency().id.equals(proposal.getAgency().id)) {
+            throw new NotFoundException("Roteiro não encontrado nesta agência");
+        }
+        if (optionRepository.existsByVersionAndTrip(version.id, sourceTrip.id)) {
+            throw new BadRequestException("Este roteiro já é uma opção desta proposta");
+        }
+
+        AddOptionFromTripMode mode = AddOptionFromTripMode.fromString(request.getMode());
+        User creator = userRepository.findById(userId);
+        Trip optionTrip;
+        if (mode == AddOptionFromTripMode.LINK) {
+            optionRepository.findOpenOptionByTripExcludingProposal(sourceTrip.id, proposal.id)
+                    .ifPresent(o -> {
+                        throw new BadRequestException(
+                                "Este roteiro já está vinculado a outra proposta aberta; use clonar ou libere a outra proposta.");
+                    });
+            optionTrip = sourceTrip;
+            if (proposal.getClient() != null && optionTrip.getClient() == null) {
+                optionTrip.setClient(proposal.getClient());
+            }
+            optionTrip.setProposalStatus(ProposalStatus.QUOTING);
+            assignProposalShareCodeIfAvailable(optionTrip, proposal.getShareCode());
+        } else {
+            optionTrip = cloneTripWithItinerary(sourceTrip, creator, proposal);
+            tripRepository.persist(optionTrip);
+            tripRepository.addTripMember(optionTrip, creator, "OWNER");
+        }
+
+        ProposalOptionPosition nextPos = nextPosition(existing);
+        String optionName = request.getName() != null && !request.getName().isBlank()
+                ? request.getName().trim()
+                : defaultOptionName(nextPos, optionTrip.getName());
+        String shortDesc = optionTrip.getDescription() != null
+                ? optionTrip.getDescription().substring(0, Math.min(500, optionTrip.getDescription().length()))
+                : null;
+
+        ProposalOption option = ProposalOption.builder()
+                .version(version)
+                .trip(optionTrip)
+                .position(nextPos)
+                .sortOrder(existing.size())
+                .recommended(false)
+                .name(optionName)
+                .shortDescription(shortDesc)
+                .coverImageUrl(optionTrip.getCoverImageUrl())
+                .build();
+        optionRepository.persist(option);
+
+        int markupBps = markupBpsFromAgency(proposal.getAgency());
+        createPackageItemForTrip(version, option, optionTrip, markupBps);
+        if (existing.stream().filter(o -> !o.isHidden()).count() >= 1) {
+            proposal.setFormat(ProposalFormat.COMPARE);
+        }
+        recalculateOption(option);
+        syncTripMirror(option);
+        return toDto(proposal, true);
+    }
+
+    private Trip cloneTripWithItinerary(Trip src, User creator, CommercialProposal proposal) {
+        Trip clone = Trip.builder()
+                .name(src.getName())
+                .description(src.getDescription())
+                .flightDetails(src.getFlightDetails())
+                .hotelDetails(src.getHotelDetails())
+                .workspace(src.getWorkspace() != null ? src.getWorkspace() : resolveWorkspace(creator))
+                .createdBy(creator)
+                .agency(proposal.getAgency())
+                .client(proposal.getClient() != null ? proposal.getClient() : src.getClient())
+                .assignedConsultant(src.getAssignedConsultant() != null ? src.getAssignedConsultant() : creator)
+                .status(TripStatus.PLANNING)
+                .proposalStatus(ProposalStatus.QUOTING)
+                .shareCode(ProposalService.generateShareCode())
+                .startDate(src.getStartDate())
+                .endDate(src.getEndDate())
+                .durationDays(src.getDurationDays())
+                .budgetTotal(src.getBudgetTotal())
+                .currency(src.getCurrency())
+                .coverImageUrl(src.getCoverImageUrl())
+                .baseCost(src.getBaseCost())
+                .baseCostItems(src.getBaseCostItems() != null ? new ArrayList<>(src.getBaseCostItems()) : null)
+                .finalPrice(src.getFinalPrice())
+                .segments(new ArrayList<>())
+                .proposalTiers(new ArrayList<>())
+                .users(new ArrayList<>())
+                .build();
+
+        if (src.getSegments() != null) {
+            for (TripSegment seg : src.getSegments()) {
+                TripSegment segCopy = TripSegment.builder()
+                        .trip(clone)
+                        .cityId(seg.getCityId())
+                        .arrivalDate(seg.getArrivalDate())
+                        .departureDate(seg.getDepartureDate())
+                        .startDay(seg.getStartDay())
+                        .endDay(seg.getEndDay())
+                        .notes(seg.getNotes())
+                        .dailyCost(seg.getDailyCost())
+                        .meals(new ArrayList<>())
+                        .activities(new ArrayList<>())
+                        .build();
+                if (seg.getMeals() != null) {
+                    for (Meal meal : seg.getMeals()) {
+                        segCopy.getMeals().add(Meal.builder()
+                                .segment(segCopy)
+                                .mealType(meal.getMealType())
+                                .name(meal.getName())
+                                .description(meal.getDescription())
+                                .location(meal.getLocation())
+                                .restaurantName(meal.getRestaurantName())
+                                .address(meal.getAddress())
+                                .latitude(meal.getLatitude())
+                                .longitude(meal.getLongitude())
+                                .cost(meal.getCost())
+                                .startTime(meal.getStartTime())
+                                .endTime(meal.getEndTime())
+                                .dayNumber(meal.getDayNumber())
+                                .notes(meal.getNotes())
+                                .date(meal.getDate())
+                                .build());
+                    }
+                }
+                if (seg.getActivities() != null) {
+                    for (Activity act : seg.getActivities()) {
+                        segCopy.getActivities().add(Activity.builder()
+                                .segment(segCopy)
+                                .name(act.getName())
+                                .activityType(act.getActivityType())
+                                .address(act.getAddress())
+                                .latitude(act.getLatitude())
+                                .longitude(act.getLongitude())
+                                .cost(act.getCost())
+                                .optional(act.isOptional())
+                                .startTime(act.getStartTime())
+                                .endTime(act.getEndTime())
+                                .dayNumber(act.getDayNumber())
+                                .notes(act.getNotes())
+                                .site(act.getSite())
+                                .date(act.getDate())
+                                .build());
+                    }
+                }
+                clone.getSegments().add(segCopy);
+            }
+        }
+        return clone;
+    }
+
+    private void createPackageItemForTrip(
+            ProposalVersion version, ProposalOption option, Trip trip, int markupBps) {
+        TripPriceSeed seed = seedPriceFromTrip(trip);
+        PricingEngine.ItemResult priced;
+        ItemPricingMode mode;
+        if (seed.costMinor() != null && seed.costMinor() > 0) {
+            mode = ItemPricingMode.COST_PLUS;
+            priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
+                    ItemPricingMode.COST_PLUS,
+                    seed.costMinor(),
+                    MarkupKind.PERCENT,
+                    null,
+                    markupBps,
+                    null, null, null, null,
+                    0L,
+                    seed.clientPriceMinor()));
+        } else if (seed.clientPriceMinor() != null && seed.clientPriceMinor() > 0) {
+            mode = ItemPricingMode.MANUAL;
+            priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
+                    ItemPricingMode.MANUAL, null, null, null, null,
+                    null, null, null, null, 0L, seed.clientPriceMinor()));
+        } else {
+            mode = ItemPricingMode.MANUAL;
+            priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
+                    ItemPricingMode.MANUAL, null, null, null, null,
+                    null, null, null, null, 0L, 0L));
+        }
+        ProposalItem packageItem = ProposalItem.builder()
+                .version(version)
+                .option(option)
+                .scope(ProposalItemScope.OPTION)
+                .itemType(ProposalItemType.PACKAGE)
+                .name("Pacote")
+                .pricingMode(mode)
+                .costMinor(priced.costMinor() > 0 ? priced.costMinor() : null)
+                .markupKind(MarkupKind.PERCENT)
+                .markupPercentBps(markupBps)
+                .serviceFeeMinor(priced.serviceFeeMinor())
+                .clientPriceMinor(priced.clientPriceMinor())
+                .expectedRevenueMinor(priced.expectedRevenueMinor())
+                .sortOrder(0)
+                .build();
+        itemRepository.persist(packageItem);
+        applyTotalsToOption(option, List.of(priced), List.of());
+    }
+
+    /**
+     * Semear preço do item Pacote a partir do trip: finalPrice → baseCost → budgetTotal.
+     * Orçamento da solicitação costuma existir antes de custo/preço comercial.
+     */
+    private record TripPriceSeed(Long costMinor, Long clientPriceMinor) {}
+
+    private TripPriceSeed seedPriceFromTrip(Trip trip) {
+        if (trip == null) {
+            return new TripPriceSeed(null, null);
+        }
+        Long costMinor = trip.getBaseCost() != null && trip.getBaseCost().signum() > 0
+                ? PricingEngine.toMinor(trip.getBaseCost()) : null;
+        Long finalMinor = trip.getFinalPrice() != null && trip.getFinalPrice().signum() > 0
+                ? PricingEngine.toMinor(trip.getFinalPrice()) : null;
+        Long budgetMinor = trip.getBudgetTotal() != null && trip.getBudgetTotal().signum() > 0
+                ? PricingEngine.toMinor(trip.getBudgetTotal()) : null;
+        if (costMinor != null) {
+            return new TripPriceSeed(costMinor, finalMinor);
+        }
+        if (finalMinor != null) {
+            return new TripPriceSeed(null, finalMinor);
+        }
+        return new TripPriceSeed(null, budgetMinor);
+    }
+
+    /**
+     * Em DRAFT, se o Pacote está zerado/ausente mas o trip tem orçamento/preço, preenche ao abrir o motor.
+     */
+    private void seedEmptyPackagesFromTrips(CommercialProposal proposal) {
+        ProposalVersion version = proposal.getCurrentVersion();
+        if (version == null || !version.getStatus().isEditable()) {
+            return;
+        }
+        int markupBps = markupBpsFromAgency(proposal.getAgency());
+        for (ProposalOption option : optionRepository.findByVersionId(version.id)) {
+            Trip trip = option.getTrip();
+            if (trip == null) {
+                continue;
+            }
+            TripPriceSeed seed = seedPriceFromTrip(trip);
+            boolean hasSeed = (seed.costMinor() != null && seed.costMinor() > 0)
+                    || (seed.clientPriceMinor() != null && seed.clientPriceMinor() > 0);
+            if (!hasSeed) {
+                continue;
+            }
+            List<ProposalItem> items = itemRepository.findByOptionId(option.id);
+            ProposalItem pkg = items.stream()
+                    .filter(i -> i.getItemType() == ProposalItemType.PACKAGE)
+                    .findFirst()
+                    .orElse(null);
+            boolean empty = pkg == null
+                    || ((pkg.getClientPriceMinor() == null || pkg.getClientPriceMinor() == 0)
+                    && (pkg.getCostMinor() == null || pkg.getCostMinor() == 0)
+                    && (option.getClientPriceMinor() == 0)
+                    && (option.getSupplierCostMinor() == 0));
+            if (!empty) {
+                continue;
+            }
+            if (pkg == null) {
+                createPackageItemForTrip(version, option, trip, markupBps);
+            } else {
+                PricingEngine.ItemResult priced;
+                if (seed.costMinor() != null && seed.costMinor() > 0) {
+                    pkg.setPricingMode(ItemPricingMode.COST_PLUS);
+                    priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
+                            ItemPricingMode.COST_PLUS,
+                            seed.costMinor(),
+                            MarkupKind.PERCENT,
+                            null,
+                            markupBps,
+                            null, null, null, null,
+                            0L,
+                            seed.clientPriceMinor()));
+                    pkg.setCostMinor(priced.costMinor() > 0 ? priced.costMinor() : null);
+                } else {
+                    pkg.setPricingMode(ItemPricingMode.MANUAL);
+                    priced = PricingEngine.priceItem(new PricingEngine.ItemInput(
+                            ItemPricingMode.MANUAL, null, null, null, null,
+                            null, null, null, null, 0L, seed.clientPriceMinor()));
+                    pkg.setCostMinor(null);
+                }
+                pkg.setMarkupKind(MarkupKind.PERCENT);
+                pkg.setMarkupPercentBps(markupBps);
+                pkg.setServiceFeeMinor(priced.serviceFeeMinor());
+                pkg.setClientPriceMinor(priced.clientPriceMinor());
+                pkg.setExpectedRevenueMinor(priced.expectedRevenueMinor());
+                applyTotalsToOption(option, List.of(priced), List.of());
+            }
+            recalculateOption(option);
+            syncTripMirror(option);
+        }
     }
 
     @Transactional

@@ -61,6 +61,18 @@ public class CommercialProposalController {
                 Response.ok(commercialProposalService.duplicateOption(userId, proposalId, optionId)).build());
     }
 
+    @POST
+    @Path("/{proposalId}/options/from-trip")
+    @Transactional
+    @Operation(summary = "Adicionar opção a partir de roteiro existente (CLONE ou LINK)")
+    public Response addOptionFromTrip(
+            @PathParam("proposalId") UUID proposalId,
+            AddOptionFromTripRequest request,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId ->
+                Response.ok(commercialProposalService.addOptionFromTrip(userId, proposalId, request)).build());
+    }
+
     @PATCH
     @Path("/{proposalId}/options/{optionId}")
     @Transactional

@@ -19,6 +19,7 @@ import org.example.application.services.agency.AgencyClientService;
 import org.example.application.services.agency.AgencyOnboardingService;
 import org.example.application.services.agency.AgencyOpportunityService;
 import org.example.application.services.agency.AgencyService;
+import org.example.application.services.proposal.CommercialProposalService;
 import org.example.application.services.proposal.ProposalService;
 import org.example.domain.entity.AgencyMember;
 import org.example.domain.repository.UserRepository;
@@ -46,6 +47,7 @@ public class AgencyController {
     private final AgencyOpportunityService agencyOpportunityService;
     private final AgencyAgendaService agencyAgendaService;
     private final ProposalService proposalService;
+    private final CommercialProposalService commercialProposalService;
     private final ObjectStorageService objectStorageService;
 
     @GET
@@ -682,6 +684,26 @@ public class AgencyController {
             }
             return Response.ok(proposalService.listPipeline(
                     userId, parsed, consultantId, q, pipelineScope, page, size)).build();
+        });
+    }
+
+    @GET
+    @Path("/trips/picker")
+    @Operation(summary = "Listar roteiros da agência para adicionar à proposta (filtro por origem)")
+    public Response tripsPicker(
+            @QueryParam("origin") @DefaultValue("ALL") String origin,
+            @QueryParam("q") String q,
+            @QueryParam("excludeProposalId") UUID excludeProposalId,
+            @Context HttpHeaders headers) {
+        return withUser(headers, userId -> {
+            org.example.domain.enums.TripPickerOrigin parsed;
+            try {
+                parsed = org.example.domain.enums.TripPickerOrigin.fromString(origin);
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("Invalid origin: " + origin);
+            }
+            return Response.ok(commercialProposalService.listTripsForPicker(
+                    userId, parsed, q, excludeProposalId)).build();
         });
     }
 

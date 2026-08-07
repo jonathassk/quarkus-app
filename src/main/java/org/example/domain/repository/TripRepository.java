@@ -172,6 +172,34 @@ public class TripRepository implements PanacheRepositoryBase<Trip, UUID> {
         return list("agency.id = ?1 ORDER BY updatedAt DESC", agencyId);
     }
 
+    /**
+     * Trips da agência para o picker de roteiros (exclui demo).
+     * Retorna pares {@code [Trip, segmentCount]}.
+     */
+    public List<Object[]> findForAgencyPicker(
+            UUID agencyId, String q, java.util.Collection<UUID> excludeTripIds, int limit) {
+        StringBuilder jpql = new StringBuilder(
+                "SELECT t, SIZE(t.segments) FROM Trip t "
+                        + "WHERE t.agency.id = :agencyId AND t.demo = false");
+        if (q != null && !q.isBlank()) {
+            jpql.append(" AND lower(t.name) LIKE :q");
+        }
+        if (excludeTripIds != null && !excludeTripIds.isEmpty()) {
+            jpql.append(" AND t.id NOT IN :excludeIds");
+        }
+        jpql.append(" ORDER BY t.updatedAt DESC");
+        var query = getEntityManager().createQuery(jpql.toString(), Object[].class);
+        query.setParameter("agencyId", agencyId);
+        if (q != null && !q.isBlank()) {
+            query.setParameter("q", "%" + q.trim().toLowerCase() + "%");
+        }
+        if (excludeTripIds != null && !excludeTripIds.isEmpty()) {
+            query.setParameter("excludeIds", excludeTripIds);
+        }
+        query.setMaxResults(Math.min(Math.max(limit, 1), 100));
+        return query.getResultList();
+    }
+
     public List<Trip> findByAgencyIdAndProposalStatus(UUID agencyId, org.example.domain.enums.ProposalStatus status) {
         return list("agency.id = ?1 AND proposalStatus = ?2 ORDER BY updatedAt DESC", agencyId, status);
     }
